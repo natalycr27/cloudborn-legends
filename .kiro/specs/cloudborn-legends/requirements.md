@@ -48,11 +48,11 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 #### Acceptance Criteria
 
-1. THE Frontend SHALL mostrar un campo de texto de máximo 500 caracteres donde el jugador describe su Campeón.
+1. THE Frontend SHALL mostrar un campo de texto que acepte entre 10 y 500 caracteres donde el jugador describe su Campeón, junto con un contador visible de caracteres.
 2. WHEN el jugador envía una descripción de Campeón no vacía, THE Frontend SHALL mostrar el texto "Tu leyenda está naciendo en la nube..." y mantenerlo visible mientras se genera el Campeón, hasta que la generación termine con éxito o falle.
 3. WHEN la generación del Campeón termina con éxito, THE Frontend SHALL mostrar el Campeón generado con su nombre, Estadísticas, Habilidades y colores.
 4. IF la generación del Campeón falla, THEN THE Frontend SHALL mostrar un mensaje de error en español indicando que la generación falló, conservar la descripción ingresada por el jugador y permitir un nuevo intento de generación.
-5. IF el jugador envía una descripción de Campeón vacía, THEN THE Frontend SHALL mostrar un mensaje de error en español indicando que la descripción es obligatoria, sin iniciar la generación del Campeón.
+5. IF el jugador envía una descripción de Campeón vacía, compuesta solo por espacios o con menos de 10 caracteres, THEN THE Frontend SHALL mostrar un mensaje de error en español indicando que la descripción debe tener al menos 10 caracteres, sin iniciar la generación del Campeón.
 6. FOR ALL Campeones generados con éxito, el Frontend SHALL mostrar exactamente un nombre, las cuatro Estadísticas, entre 2 y 3 Habilidades del catálogo predefinido y dos colores del Campeón (propiedad invariante de visualización).
 
 ### Requirement 3: Generación de campeón por IA
@@ -66,8 +66,8 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 3. THE Campeón generado SHALL incluir un nombre de entre 1 y 30 caracteres, cuatro Estadísticas (vida, daño, velocidad, armadura), entre 2 y 3 Habilidades del catálogo predefinido, y un color principal y un color secundario.
 4. THE Lambda SHALL ser el único componente autorizado para invocar Bedrock.
 5. THE Estadísticas de un Campeón SHALL estar dentro de los siguientes rangos fijos: vida entre 800 y 1200, daño entre 50 y 150, velocidad entre 200 y 400, armadura entre 10 y 50.
-6. THE Lambda SHALL invocar Bedrock con un modelo cuyo costo por token se encuentre en el tercio inferior del catálogo de modelos de Bedrock.
-7. IF la invocación a Bedrock falla o no responde dentro de 30 segundos, THEN THE Lambda SHALL devolver al jugador un mensaje de error indicando que la generación del Campeón no pudo completarse, sin generar ni almacenar un Campeón parcial.
+6. THE Lambda SHALL invocar Bedrock con el modelo indicado en un parámetro de configuración de SAM, usando por defecto un modelo de bajo costo (Amazon Nova Micro), de modo que el modelo pueda cambiarse sin modificar el código.
+7. IF la invocación a Bedrock falla o no responde dentro de 12 segundos, THEN THE Lambda SHALL devolver al jugador un mensaje de error indicando que la generación del Campeón no pudo completarse, sin generar ni almacenar un Campeón parcial.
 8. IF la respuesta de Bedrock no cumple con la estructura completa de un Campeón (nombre, cuatro Estadísticas dentro de sus rangos fijos, entre 2 y 3 Habilidades del catálogo predefinido, y colores principal y secundario), THEN THE Lambda SHALL devolver al jugador un mensaje de error indicando que la generación no pudo completarse, sin exponer datos incompletos al jugador.
 
 #### Propiedades PBT
@@ -82,9 +82,9 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 #### Acceptance Criteria
 
-1. WHEN la Lambda recibe el JSON del Campeón desde Bedrock, THE Lambda SHALL validar que el JSON contiene un nombre de entre 1 y 50 caracteres, las cuatro Estadísticas, entre 2 y 3 Habilidades del catálogo predefinido y los dos colores.
+1. WHEN la Lambda recibe el JSON del Campeón desde Bedrock, THE Lambda SHALL validar que el JSON contiene un nombre de entre 1 y 30 caracteres, las cuatro Estadísticas, entre 2 y 3 Habilidades del catálogo predefinido y los dos colores.
 2. IF una Estadística del Campeón está fuera de su rango fijo, THEN THE Lambda SHALL ajustar el valor al límite válido más cercano del rango.
-3. IF el JSON del Campeón no tiene la estructura esperada (nombre ausente, vacío o superior a 50 caracteres; número incorrecto de Estadísticas; número incorrecto de Habilidades; número incorrecto de colores; o sintaxis JSON inválida), THEN THE Lambda SHALL retornar un error descriptivo en español que indique qué elemento falló, rechazando el Campeón sin ajustar sus Estadísticas.
+3. IF el JSON del Campeón no tiene la estructura esperada (nombre ausente, vacío o superior a 30 caracteres; número incorrecto de Estadísticas; número incorrecto de Habilidades; número incorrecto de colores; o sintaxis JSON inválida), THEN THE Lambda SHALL retornar un error descriptivo en español que indique qué elemento falló, rechazando el Campeón sin ajustar sus Estadísticas.
 4. IF una Habilidad del Campeón no pertenece al catálogo predefinido, THEN THE Lambda SHALL rechazar el Campeón con un error que indique el nombre de la Habilidad no reconocida.
 5. WHEN la Lambda valida un Campeón con Estadísticas dentro de rango, THE Lambda SHALL retornar el Campeón sin modificar sus Estadísticas.
 6. FOR ALL Campeones válidos, validar el Campeón dos veces SHALL producir valores idénticos en todos los campos (nombre, Estadísticas, Habilidades y colores) que validarlo una vez (propiedad de idempotencia).
@@ -126,9 +126,10 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 1. WHEN la vida de un Campeón llega a cero y la vida del otro Campeón es mayor que cero, THE Combate SHALL terminar y declarar al Campeón con vida mayor que cero como ganador.
 2. WHEN la vida de un Campeón llega a cero y la vida del otro Campeón también es cero, THE Combate SHALL declarar empate.
-3. THE Combate SHALL terminar únicamente cuando al menos un Campeón tenga vida cero.
+3. THE Combate SHALL terminar cuando al menos un Campeón tenga vida cero o cuando el Combate alcance una duración máxima de 90 segundos, lo que ocurra primero.
 4. FOR ALL Combates, la vida de cada Campeón SHALL permanecer mayor o igual a cero durante toda la batalla (propiedad invariante).
 5. FOR ALL Combates, THE Combate SHALL producir exactamente un resultado: un ganador único o un empate, nunca ambos ni ninguno (propiedad invariante de resultado único).
+6. WHEN el Combate alcanza 90 segundos sin que ningún Campeón llegue a vida cero, THE Combate SHALL declarar ganador al Campeón con mayor porcentaje de vida restante respecto a su vida máxima y, si ambos porcentajes son iguales, SHALL declarar empate.
 
 ### Requirement 8: Narrador de IA de la batalla
 
@@ -136,10 +137,10 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 #### Acceptance Criteria
 
-1. WHEN el Combate termina, THE Backend SHALL invocar Bedrock con los eventos registrados, los Campeones participantes y el resultado del Combate para generar un comentario narrativo de la batalla, con un tiempo máximo de respuesta de 30 segundos.
+1. WHEN el Combate termina, THE Backend SHALL invocar Bedrock con los eventos registrados, los Campeones participantes y el resultado del Combate para generar un comentario narrativo de la batalla, con un tiempo máximo de espera a Bedrock de 12 segundos.
 2. THE Narrador SHALL producir un texto en español de entre 100 y 500 caracteres que incluya el resultado de la batalla y al menos un evento registrado de la misma.
 3. THE Backend SHALL usar Bedrock como única fuente para la narración.
-4. IF Bedrock falla o no responde dentro de 30 segundos, THEN THE Backend SHALL proporcionar una narración de respaldo en español que indique el resultado de la batalla.
+4. IF Bedrock falla, no responde dentro de 12 segundos o devuelve un texto fuera del rango de 100 a 500 caracteres, THEN THE Backend SHALL proporcionar una narración de respaldo en español de entre 100 y 500 caracteres que indique el resultado de la batalla.
 
 #### Propiedades PBT
 
@@ -147,7 +148,7 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 2. **Invariante de longitud:** Para toda narración generada, el texto SHALL tener entre 100 y 500 caracteres.
 3. **Invariante de contenido mínimo:** Para toda narración generada, el texto SHALL incluir el resultado de la batalla y al menos un evento registrado.
 4. **Invariante de resiliencia:** Para toda falla de Bedrock, el Backend SHALL proporcionar una narración de respaldo en español con el resultado de la batalla.
-5. **Invariante de plazo de respuesta:** Para toda narración, el Backend SHALL entregar el comentario dentro de 30 segundos desde la finalización del Combate.
+5. **Invariante de plazo de respuesta:** Para toda narración, el Backend SHALL entregar el comentario dentro de 15 segundos desde la recepción de la solicitud.
 
 ### Requirement 9: Salón de las Leyendas (ranking en vivo)
 
@@ -169,19 +170,19 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 #### Acceptance Criteria
 
-1. THE API_Gateway SHALL exponer un endpoint REST para crear un Campeón a partir de una descripción de texto de entre 1 y 2000 caracteres.
-2. WHEN el endpoint recibe una descripción de texto de entre 1 y 2000 caracteres que no esté compuesta únicamente por espacios en blanco, THE Lambda SHALL generar el Campeón vía Bedrock, validar que el Campeón cumple con los campos obligatorios del modelo de Campeón, y devolverlo como JSON.
+1. THE API_Gateway SHALL exponer un endpoint REST para crear un Campeón a partir de una descripción de texto de entre 10 y 500 caracteres.
+2. WHEN el endpoint recibe una descripción de texto de entre 10 y 500 caracteres (contados después de quitar los espacios al inicio y al final), THE Lambda SHALL generar el Campeón vía Bedrock, validarlo según el Requirement 4, guardarlo en DynamoDB con un identificador único y un conteo de victorias igual a 0, y devolverlo como JSON.
 3. IF la descripción de texto está vacía o compuesta únicamente por espacios en blanco, THEN THE Lambda SHALL retornar un error con código HTTP 400 y un mensaje en español indicando que la descripción es obligatoria.
 4. WHEN la generación y validación del Campeón son exitosas, THE endpoint SHALL devolver el Campeón generado como JSON con código HTTP 200.
-5. IF la descripción de texto supera los 2000 caracteres, THEN THE Lambda SHALL retornar un error con código HTTP 400 y un mensaje en español indicando que la descripción excede la longitud máxima permitida.
-6. IF la generación del Campeón vía Bedrock falla o no se completa dentro de los 30 segundos, THEN THE Lambda SHALL retornar un error indicando que la generación no pudo completarse y conservar el estado previo sin crear un Campeón parcial.
+5. IF la descripción de texto tiene menos de 10 caracteres o supera los 500 caracteres, THEN THE Lambda SHALL retornar un error con código HTTP 400 y un mensaje en español indicando la longitud permitida (entre 10 y 500 caracteres).
+6. IF la generación del Campeón vía Bedrock falla o no se completa dentro de 12 segundos, THEN THE Lambda SHALL retornar un error indicando que la generación no pudo completarse y conservar el estado previo sin crear un Campeón parcial.
 7. IF el Campeón generado no cumple con los campos obligatorios del modelo de Campeón, THEN THE Lambda SHALL retornar un error indicando que el Campeón generado no es válido y no devolverlo al Frontend.
 
 #### Propiedades PBT
 
-1. **Completitud:** Para toda descripción de texto válida (entre 1 y 2000 caracteres y no compuesta únicamente por espacios en blanco), el endpoint devuelve un Campeón que cumple con los campos obligatorios del modelo de Campeón.
+1. **Completitud:** Para toda descripción de texto válida (entre 10 y 500 caracteres sin contar espacios al inicio y al final) y una respuesta válida de Bedrock, el endpoint devuelve un Campeón que cumple con los campos obligatorios del modelo de Campeón.
 2. **No falsos positivos:** Para toda descripción de texto vacía o compuesta únicamente por espacios en blanco, el endpoint retorna un error con código HTTP 400.
-3. **Validación del límite superior:** Para toda descripción de texto que supere los 2000 caracteres, el endpoint retorna un error con código HTTP 400.
+3. **Validación de límites:** Para toda descripción de texto con menos de 10 o más de 500 caracteres, el endpoint retorna un error con código HTTP 400 sin invocar Bedrock.
 4. **No emisión de Campeones inválidos:** El endpoint nunca devuelve un Campeón que no haya superado la validación de campos obligatorios del modelo de Campeón.
 
 ### Requirement 11: Endpoint de API para listar campeones
@@ -211,7 +212,7 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 1. THE API_Gateway SHALL exponer un endpoint REST para registrar el resultado de una batalla, el cual debe incluir los identificadores de los dos Campeones participantes y el resultado del combate, indicando un ganador o un empate.
 2. WHEN el endpoint recibe un resultado que indica un ganador, THE Lambda SHALL incrementar en 1 el conteo de victorias del Campeón ganador en DynamoDB.
 3. WHEN el endpoint recibe un resultado que indica empate, THE Lambda SHALL dejar los conteos de victorias de todos los Campeones participantes sin cambios.
-4. IF el resultado no contiene un identificador de Campeón ganador o el identificador está vacío, THEN THE Lambda SHALL retornar un error con código HTTP 400 indicando que el identificador del ganador es inválido, sin modificar los conteos de victorias.
+4. IF el resultado indica un ganador y no contiene el identificador del Campeón ganador, el identificador está vacío o no corresponde a ninguno de los dos Campeones participantes, THEN THE Lambda SHALL retornar un error con código HTTP 400 indicando que el identificador del ganador es inválido, sin modificar los conteos de victorias.
 5. IF el identificador del Campeón ganador no corresponde a un Campeón existente en DynamoDB, THEN THE Lambda SHALL retornar un error con código HTTP 400 indicando que el Campeón no existe, sin modificar los conteos de victorias.
 6. IF el resultado no incluye los identificadores de ambos Campeones participantes o el indicador de resultado del combate, THEN THE Lambda SHALL retornar un error con código HTTP 400 indicando que el resultado de la batalla está incompleto, sin modificar los conteos de victorias.
 
@@ -247,10 +248,10 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 #### Acceptance Criteria
 
 1. THE API_Gateway SHALL exponer un endpoint REST para narrar una batalla.
-2. WHEN el endpoint recibe los datos de una batalla finalizada que incluye el resultado del Combate y los Campeones participantes, THE Lambda SHALL invocar Bedrock y retornar un comentario narrativo no vacío en español de máximo 500 caracteres con código HTTP 200.
-3. IF la generación de la narración falla, THEN THE Lambda SHALL retornar un error con código HTTP 500 y un mensaje en español.
+2. WHEN el endpoint recibe los datos de una batalla finalizada que incluye el resultado del Combate y los Campeones participantes, THE Lambda SHALL invocar Bedrock y retornar un comentario narrativo no vacío en español de entre 100 y 500 caracteres con código HTTP 200.
+3. IF la generación de la narración con Bedrock falla, THEN THE Lambda SHALL retornar código HTTP 200 con la narración de respaldo definida en el Requirement 8 y un indicador de que se usó la narración de respaldo.
 4. IF el endpoint recibe datos de batalla vacíos o que no contienen el resultado del Combate, THEN THE Lambda SHALL retornar un error con código HTTP 400 y un mensaje en español.
-5. FOR ALL narraciones exitosas, el comentario narrativo retornado SHALL ser un texto no vacío en español de máximo 500 caracteres (propiedad invariante).
+5. FOR ALL narraciones exitosas, el comentario narrativo retornado SHALL ser un texto en español de entre 100 y 500 caracteres (propiedad invariante).
 
 ### Requirement 15: Arquitectura serverless
 
@@ -274,7 +275,7 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 1. WHERE un servicio de la arquitectura ofrezca una capa gratuita, THE arquitectura SHALL usar dicho servicio dentro de los límites de la capa gratuita publicados por AWS, medidos en una ventana mensual.
 2. WHEN se genera un Campeón o se narra una batalla, THE Lambda SHALL invocar Bedrock únicamente para esas dos operaciones, con el fin de reducir costos de inferencia.
 3. THE DynamoDB SHALL usar capacidad bajo demanda o provisionada dentro de los límites de la capa gratuita publicados por AWS, medidos en una ventana mensual.
-4. IF se intenta invocar Bedrock para una operación distinta a la generación de campeones o la narración de batallas, THEN THE Lambda SHALL rechazar la invocación.
+4. THE Backend SHALL otorgar permiso de invocación de Bedrock (IAM) únicamente a la Lambda de creación de Campeón y a la Lambda de narración.
 
 #### Propiedades PBT
 
@@ -288,7 +289,7 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 #### Acceptance Criteria
 
-1. THE Cloudborn_Legends SHALL iniciar la demostración completa mediante un único comando, sin requerir pasos de configuración manual ni activación de funcionalidades avanzadas opcionales.
+1. THE Cloudborn_Legends SHALL desplegarse completo (Backend y Frontend) mediante un único script de despliegue, sin requerir pasos de configuración manual adicionales después de la configuración inicial de credenciales de AWS.
 2. THE código del proyecto SHALL incluir al menos un comentario descriptivo en español en cada función, para facilitar el mantenimiento por un desarrollador principiante en JavaScript.
 3. WHEN se ejecuta la demostración completa de principio a fin, THE Cloudborn_Legends SHALL completarla sin errores de ejecución ni excepciones no controladas.
 4. IF ocurre un error durante la demostración, THEN THE Cloudborn_Legends SHALL mostrar una indicación del error sin cerrar la aplicación ni perder el estado de la sesión.
@@ -309,14 +310,14 @@ La arquitectura es 100% serverless: frontend estático en S3 + CloudFront con Ph
 
 #### Acceptance Criteria
 
-1. WHEN el jugador envía una descripción de texto de entre 1 y 500 caracteres, THE Backend SHALL devolver un Campeón que cumpla las reglas de validación de Campeón del sistema dentro de 15 segundos medidos desde la recepción de la solicitud hasta la entrega de la respuesta.
-2. WHEN el jugador solicita la narración de una batalla entre exactamente 2 Campeones, THE Backend SHALL devolver un comentario narrativo de entre 100 y 2000 caracteres dentro de 15 segundos medidos desde la recepción de la solicitud hasta la entrega de la respuesta.
-3. IF la generación del Campeón o la narración de batalla no se completa dentro de 15 segundos, THEN THE Backend SHALL devolver una respuesta de error indicando que se ha excedido el tiempo límite.
+1. WHEN el jugador envía una descripción de texto de entre 10 y 500 caracteres, THE Backend SHALL devolver un Campeón que cumpla las reglas de validación de Campeón del sistema dentro de 15 segundos medidos desde la recepción de la solicitud hasta la entrega de la respuesta.
+2. WHEN el jugador solicita la narración de una batalla entre exactamente 2 Campeones, THE Backend SHALL devolver un comentario narrativo de entre 100 y 500 caracteres dentro de 15 segundos medidos desde la recepción de la solicitud hasta la entrega de la respuesta.
+3. IF la generación del Campeón no se completa dentro de 15 segundos, THEN THE Backend SHALL devolver una respuesta de error indicando que se ha excedido el tiempo límite; IF la narración no se completa a tiempo, THEN THE Backend SHALL devolver la narración de respaldo del Requirement 8.
 4. IF el Campeón generado no cumple las reglas de validación de Campeón del sistema, THEN THE Backend SHALL descartar el Campeón no válido y devolver una respuesta de error indicando que no se pudo generar un Campeón válido.
 
 #### Propiedades PBT
 
-1. **Invariante de rendimiento (generación):** Para toda descripción de texto de entre 1 y 500 caracteres, el tiempo entre la recepción de la solicitud y la entrega del Campeón válido es menor o igual a 15 segundos.
-2. **Invariante de rendimiento (narración):** Para toda solicitud de narración de batalla entre 2 Campeones, el comentario narrativo devuelto tiene entre 100 y 2000 caracteres y se entrega en 15 segundos o menos.
+1. **Invariante de rendimiento (generación):** Para toda descripción de texto de entre 10 y 500 caracteres, el tiempo entre la recepción de la solicitud y la entrega del Campeón válido es menor o igual a 15 segundos.
+2. **Invariante de rendimiento (narración):** Para toda solicitud de narración de batalla entre 2 Campeones, el comentario narrativo devuelto tiene entre 100 y 500 caracteres y se entrega en 15 segundos o menos.
 3. **Invariante de error por timeout:** Para toda solicitud cuyo procesamiento exceda 15 segundos, el sistema devuelve una respuesta de error en lugar de quedar en espera indefinida.
 4. **Invariante de validación:** Para todo Campeón que no cumpla las reglas de validación del sistema, el sistema devuelve una respuesta de error en lugar del Campeón no válido.
