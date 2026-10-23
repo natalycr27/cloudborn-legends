@@ -55,6 +55,30 @@
         "chatSessionId": "sess_b818cdab-a3b0-4729-aea3-3e39c796d1f2",
         "timestamp": 1792729584033
       }
+    ],
+    "2.1 Implementar la validación de descripción y la lógica de invocación a Bedrock": [
+      {
+        "executionId": "f2419441-4d7d-4a0b-95a7-eea2a1389d7f",
+        "chatSessionId": "sess_20d7115d-8be5-40c5-8118-e424e2b1d916",
+        "timestamp": 1792729764807
+      },
+      {
+        "executionId": "f2419441-4d7d-4a0b-95a7-eea2a1389d7f",
+        "chatSessionId": "sess_20d7115d-8be5-40c5-8118-e424e2b1d916",
+        "timestamp": 1792730045387
+      }
+    ],
+    "2.2 Implementar la función de validación y ajuste del campeón JSON": [
+      {
+        "executionId": "055980d3-3b72-45f1-a7be-6b15fdf022f6",
+        "chatSessionId": "sess_41ece5cc-d4d2-4f8f-960a-bbcd7dae50f8",
+        "timestamp": 1792730430824
+      },
+      {
+        "executionId": "055980d3-3b72-45f1-a7be-6b15fdf022f6",
+        "chatSessionId": "sess_41ece5cc-d4d2-4f8f-960a-bbcd7dae50f8",
+        "timestamp": 1792730534334
+      }
     ]
   }
 }

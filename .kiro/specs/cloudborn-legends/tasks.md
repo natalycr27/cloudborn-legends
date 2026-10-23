@@ -40,14 +40,14 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - _Requisitos: 17.3_
 
 - [ ] 2. Lambda `crear_campeon` — generación y validación de campeón
-  - [ ] 2.1 Implementar la validación de descripción y la lógica de invocación a Bedrock
+  - [x] 2.1 Implementar la validación de descripción y la lógica de invocación a Bedrock
     - En `backend/crear_campeon/app.py`, implementar el handler que recibe el body JSON con el campo `descripcion`
     - Aplicar `strip()` y validar longitud entre 10 y 500 caracteres; devolver HTTP 400 con mensaje en español si falla, sin invocar Bedrock
     - Crear el cliente `boto3` de Bedrock Runtime con `botocore.config.Config(read_timeout=12, connect_timeout=3, retries={"max_attempts": 1})`
     - Construir el system prompt y el user message según el diseño; llamar a `bedrock.converse(...)` con `maxTokens=800` y `temperature=0.7`
     - _Requisitos: 3.1, 3.2, 3.4, 3.6, 3.7, 10.1, 10.3, 10.5, 19.1_
 
-  - [ ] 2.2 Implementar la función de validación y ajuste del campeón JSON
+  - [x] 2.2 Implementar la función de validación y ajuste del campeón JSON
     - En `backend/shared/validar_campeon.py`, implementar `validar_y_ajustar(campeon_dict)` que:
       - Valida presencia de nombre (1-30 chars), cuatro estadísticas, 2-3 habilidades del catálogo, colorPrincipal y colorSecundario
       - Aplica `clamp` a cada estadística al límite más cercano del rango fijo
