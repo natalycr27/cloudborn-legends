@@ -7,7 +7,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
 ## Tasks
 
 - [ ] 1. Estructura del proyecto e infraestructura SAM base
-  - [ ] 1.1 Crear la estructura de carpetas del proyecto
+  - [x] 1.1 Crear la estructura de carpetas del proyecto
     - Crear `backend/crear_campeon/`, `backend/listar_campeones/`, `backend/registrar_resultado/`, `backend/obtener_ranking/`, `backend/narrar_batalla/`, `backend/shared/`
     - Crear `frontend/src/`, `frontend/scenes/`, `frontend/assets/`
     - Crear `.gitignore` con entradas para `__pycache__`, `*.pyc`, `.aws-sam/`, `node_modules/`, `frontend/config.js`
