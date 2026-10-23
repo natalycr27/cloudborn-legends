@@ -62,36 +62,36 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Devolver HTTP 200 con el campeón completo usando `respuesta()`; devolver HTTP 500 ante fallo de Bedrock o JSON inválido sin almacenar nada parcial
     - _Requisitos: 3.7, 3.8, 10.2, 10.4, 10.6, 10.7, 19.1_
 
-  - [ ]* 2.4 Escribir pruebas de propiedad para la validación de descripción (Property 1)
+  - [x] 2.4 Escribir pruebas de propiedad para la validación de descripción (Property 1)
     - **Propiedad 1: Validación de descripción rechaza entradas inválidas sin invocar Bedrock**
     - **Valida: Requisitos 3.2, 2.5, 10.3, 10.5**
     - Usar pytest + Hypothesis; mockear Bedrock; generar descripciones de longitud < 10, > 500 y solo espacios en blanco
     - Verificar HTTP 400 con mensaje en español y que Bedrock no fue invocado
 
-  - [ ]* 2.5 Escribir pruebas de propiedad para la invariante de estructura del campeón (Property 2)
+  - [x] 2.5 Escribir pruebas de propiedad para la invariante de estructura del campeón (Property 2)
     - **Propiedad 2: Invariante de estructura del campeón**
     - **Valida: Requisitos 3.3, 5.2, 5.3, 2.6**
     - Generar inputs de `validar_y_ajustar` con nombres, estadísticas, habilidades y colores arbitrarios válidos
     - Verificar que el resultado contiene exactamente nombre, cuatro estadísticas, 2-3 habilidades del catálogo y dos colores
 
-  - [ ]* 2.6 Escribir pruebas de propiedad para la invariante de rangos de estadísticas (Property 3)
+  - [x] 2.6 Escribir pruebas de propiedad para la invariante de rangos de estadísticas (Property 3)
     - **Propiedad 3: Invariante de rangos de estadísticas**
     - **Valida: Requisitos 3.5, 4.7**
     - Generar campeones con estadísticas en cualquier rango; verificar que el resultado siempre tiene vida ∈ [800,1200], daño ∈ [50,150], velocidad ∈ [200,400], armadura ∈ [10,50]
 
-  - [ ]* 2.7 Escribir pruebas de propiedad para el ajuste al límite más cercano (Property 4)
+  - [x] 2.7 Escribir pruebas de propiedad para el ajuste al límite más cercano (Property 4)
     - **Propiedad 4: Ajuste de estadísticas al límite más cercano**
     - **Valida: Requisitos 4.2, 4.8, 4.5**
     - Generar campeones con estadísticas fuera de rango; verificar que el valor ajustado es el límite más cercano al valor original
     - Generar campeones con estadísticas dentro de rango; verificar que no se modifican
 
-  - [ ]* 2.8 Escribir pruebas de propiedad para idempotencia y preservación de estructura (Properties 5, 6)
+  - [x] 2.8 Escribir pruebas de propiedad para idempotencia y preservación de estructura (Properties 5, 6)
     - **Propiedad 5: Idempotencia de la validación**
     - **Propiedad 6: El ajuste preserva los campos no-estadísticas**
     - **Valida: Requisitos 4.6, 4.9**
     - Validar campeones válidos dos veces y comparar todos los campos; verificar que nombre, habilidades y colores no cambian en campeones con estadísticas ajustadas
 
-  - [ ]* 2.9 Escribir pruebas de propiedad para no-duplicidad de habilidades y rechazo de inválidos (Properties 7, 8)
+  - [-] 2.9 Escribir pruebas de propiedad para no-duplicidad de habilidades y rechazo de inválidos (Properties 7, 8)
     - **Propiedad 7: No duplicidad de habilidades**
     - **Propiedad 8: Rechazo de campeones inválidos o incompletos**
     - **Valida: Requisitos 5.5, 3.8, 4.1, 4.3, 4.4, 5.4, 10.7, 19.4**

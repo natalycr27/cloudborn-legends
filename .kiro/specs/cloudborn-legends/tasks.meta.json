@@ -79,6 +79,78 @@
         "chatSessionId": "sess_41ece5cc-d4d2-4f8f-960a-bbcd7dae50f8",
         "timestamp": 1792730534334
       }
+    ],
+    "2.4 Escribir pruebas de propiedad para la validación de descripción (Property 1)": [
+      {
+        "executionId": "445ed123-2a91-4598-a475-890d2932d6b2",
+        "chatSessionId": "sess_4f0c39b8-6f5b-429f-80f4-966ef52f66f2",
+        "timestamp": 1792732305881
+      },
+      {
+        "executionId": "445ed123-2a91-4598-a475-890d2932d6b2",
+        "chatSessionId": "sess_4f0c39b8-6f5b-429f-80f4-966ef52f66f2",
+        "timestamp": 1792732555692
+      }
+    ],
+    "2.5 Escribir pruebas de propiedad para la invariante de estructura del campeón (Property 2)": [
+      {
+        "executionId": "bf3ed45f-1989-4a62-9ca2-f9656cd0ba93",
+        "chatSessionId": "sess_97198218-d431-4da1-86cc-1e22cf873a59",
+        "timestamp": 1792732648205
+      },
+      {
+        "executionId": "bf3ed45f-1989-4a62-9ca2-f9656cd0ba93",
+        "chatSessionId": "sess_97198218-d431-4da1-86cc-1e22cf873a59",
+        "timestamp": 1792732752306
+      }
+    ],
+    "2.6 Escribir pruebas de propiedad para la invariante de rangos de estadísticas (Property 3)": [
+      {
+        "executionId": "a5906afa-5ce5-4d40-93e1-2d0e3fece767",
+        "chatSessionId": "sess_00f23130-a229-4772-8e21-ab5903f731c5",
+        "timestamp": 1792732771663
+      },
+      {
+        "executionId": "a5906afa-5ce5-4d40-93e1-2d0e3fece767",
+        "chatSessionId": "sess_00f23130-a229-4772-8e21-ab5903f731c5",
+        "timestamp": 1792732861589
+      }
+    ],
+    "2.7 Escribir pruebas de propiedad para el ajuste al límite más cercano (Property 4)": [
+      {
+        "executionId": "9690f6ff-10f7-43ff-9498-e1abc1d99900",
+        "chatSessionId": "sess_f27d3123-1117-4d63-81ba-958926584498",
+        "timestamp": 1792732944266
+      },
+      {
+        "executionId": "9690f6ff-10f7-43ff-9498-e1abc1d99900",
+        "chatSessionId": "sess_f27d3123-1117-4d63-81ba-958926584498",
+        "timestamp": 1792733052068
+      }
+    ],
+    "2.8 Escribir pruebas de propiedad para idempotencia y preservación de estructura (Properties 5, 6)": [
+      {
+        "executionId": "cfaaec01-60b5-4d1c-8eea-327a0a93bbc0",
+        "chatSessionId": "sess_84c1de60-2c2a-4635-9d33-6b3dee33c9c3",
+        "timestamp": 1792733073526
+      },
+      {
+        "executionId": "cfaaec01-60b5-4d1c-8eea-327a0a93bbc0",
+        "chatSessionId": "sess_84c1de60-2c2a-4635-9d33-6b3dee33c9c3",
+        "timestamp": 1792733242092
+      }
+    ],
+    "2.9 Escribir pruebas de propiedad para no-duplicidad de habilidades y rechazo de inválidos (Properties 7, 8)": [
+      {
+        "executionId": "654cca8c-feff-402c-82ef-5f77f9c7ffeb",
+        "chatSessionId": "sess_0ed5a0ea-47d2-4b3b-9389-43b4669b7b1d",
+        "timestamp": 1792733258223
+      },
+      {
+        "executionId": "654cca8c-feff-402c-82ef-5f77f9c7ffeb",
+        "chatSessionId": "sess_0ed5a0ea-47d2-4b3b-9389-43b4669b7b1d",
+        "timestamp": 1792733451540
+      }
     ]
   }
 }
