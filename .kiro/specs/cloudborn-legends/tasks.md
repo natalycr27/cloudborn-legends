@@ -27,7 +27,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Exportar outputs `ApiUrl` y `CloudFrontUrl`
     - _Requisitos: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 16.4_
 
-  - [ ] 1.3 Crear `backend/shared/respuesta.py`
+  - [x] 1.3 Crear `backend/shared/respuesta.py`
     - Implementar `respuesta(status, cuerpo, event=None)` que construye respuestas HTTP con headers CORS siempre presentes, incluyendo en respuestas de error
     - Comparar el header `Origin` de la petición (extraído de `event["headers"]`) contra la lista de orígenes permitidos (`ALLOWED_ORIGIN` de la variable de entorno, `http://localhost`, `http://localhost:5500`, `http://127.0.0.1:5500`); devolver ese origen en `Access-Control-Allow-Origin` si está en la lista, o el origen de CloudFront como fallback
     - Nunca poner varios orígenes en un solo header: un único valor en `Access-Control-Allow-Origin` por respuesta
