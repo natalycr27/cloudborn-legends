@@ -1,0 +1,14 @@
+# Dependencias de desarrollo y pruebas del backend (no se empaquetan en las Lambdas).
+# Instalar con: pip install -r backend/requirements-dev.txt
+
+# Runner de pruebas unitarias y de propiedades
+pytest==8.3.4
+
+# Pruebas basadas en propiedades (minimo 100 iteraciones por propiedad)
+hypothesis==6.122.3
+
+# SDK de AWS usado por las Lambdas (DynamoDB, Bedrock)
+boto3==1.35.76
+
+# Mock de servicios AWS (DynamoDB) para las pruebas sin infraestructura real
+moto[dynamodb]==5.0.22

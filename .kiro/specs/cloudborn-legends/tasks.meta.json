@@ -36,6 +36,25 @@
         "chatSessionId": "sess_e2854162-2eb0-4495-bed2-9dfe462f43f2",
         "timestamp": 1792728905911
       }
+    ],
+    "1.4 Configurar los entornos de prueba JavaScript y Python": [
+      {
+        "executionId": "1773aaca-fa31-425b-b8ee-c62252f7c26e",
+        "chatSessionId": "sess_b818cdab-a3b0-4729-aea3-3e39c796d1f2",
+        "timestamp": 1792729392543
+      },
+      {
+        "executionId": "1773aaca-fa31-425b-b8ee-c62252f7c26e",
+        "chatSessionId": "sess_b818cdab-a3b0-4729-aea3-3e39c796d1f2",
+        "timestamp": 1792729583985
+      }
+    ],
+    "1. Estructura del proyecto e infraestructura SAM base": [
+      {
+        "executionId": "1773aaca-fa31-425b-b8ee-c62252f7c26e",
+        "chatSessionId": "sess_b818cdab-a3b0-4729-aea3-3e39c796d1f2",
+        "timestamp": 1792729584033
+      }
     ]
   }
 }

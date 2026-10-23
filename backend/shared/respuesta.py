@@ -57,5 +57,12 @@ def respuesta(status, cuerpo, event=None):
             "Access-Control-Allow-Headers": "Content-Type",
             "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         },
-        "body": json.dumps(cuerpo, ensure_ascii=False),
+        "body": json.dumps(cuerpo, ensure_ascii=False, default=_convertir_decimal),
     }
+
+
+def _convertir_decimal(valor):
+    """Convierte Decimal de DynamoDB a int o float para poder serializar a JSON."""
+    if isinstance(valor, Decimal):
+        return int(valor) if valor % 1 == 0 else float(valor)
+    raise TypeError(f"Tipo no serializable: {type(valor).__name__}")

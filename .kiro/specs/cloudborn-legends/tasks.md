@@ -6,7 +6,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
 
 ## Tasks
 
-- [ ] 1. Estructura del proyecto e infraestructura SAM base
+- [x] 1. Estructura del proyecto e infraestructura SAM base
   - [x] 1.1 Crear la estructura de carpetas del proyecto
     - Crear `backend/crear_campeon/`, `backend/listar_campeones/`, `backend/registrar_resultado/`, `backend/obtener_ranking/`, `backend/narrar_batalla/`, `backend/shared/`
     - Crear `frontend/src/`, `frontend/scenes/`, `frontend/assets/`
@@ -33,7 +33,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Nunca poner varios orígenes en un solo header: un único valor en `Access-Control-Allow-Origin` por respuesta
     - _Requisitos: 15.2, 17.3_
 
-  - [ ] 1.4 Configurar los entornos de prueba JavaScript y Python
+  - [x] 1.4 Configurar los entornos de prueba JavaScript y Python
     - Crear `frontend/package.json` con dependencias de desarrollo: `vitest`, `fast-check`
     - Crear `backend/requirements-dev.txt` con `pytest`, `hypothesis`, `boto3`, `moto` (para mockear DynamoDB)
     - Crear `frontend/vitest.config.js` con configuración de entorno Node.js para importar `combat.js` sin Phaser
