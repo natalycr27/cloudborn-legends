@@ -13,7 +13,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Crear `.gitignore` con entradas para `__pycache__`, `*.pyc`, `.aws-sam/`, `node_modules/`, `frontend/config.js`
     - _Requisitos: 15.1, 15.2, 15.3_
 
-  - [ ] 1.2 Crear `template.yaml` con recursos SAM completos
+  - [x] 1.2 Crear `template.yaml` con recursos SAM completos
     - Configurar `CodeUri: backend/` en el bloque `Globals` o en cada función Lambda del `template.yaml` para que la carpeta `backend/shared/` se incluya automáticamente en todos los paquetes
     - Configurar el `Handler` de cada Lambda con la ruta completa desde `backend/`: `crear_campeon.app.lambda_handler`, `listar_campeones.app.lambda_handler`, `registrar_resultado.app.lambda_handler`, `obtener_ranking.app.lambda_handler`, `narrar_batalla.app.lambda_handler`
     - Crear archivos `__init__.py` vacíos en cada carpeta de Lambda y en `backend/shared/` para que Python trate cada carpeta como un paquete y permita la importación de `shared.respuesta`

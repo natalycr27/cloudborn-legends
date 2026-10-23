@@ -1,0 +1,416 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Cloudborn Legends — juego web serverless en AWS.
+  Define el backend (API Gateway REST + 5 Lambdas Python + DynamoDB + permisos
+  para Bedrock) y el frontend estatico (S3 privado + CloudFront con OAC).
+
+# ---------------------------------------------------------------------------
+# Parametros configurables del stack
+# ---------------------------------------------------------------------------
+Parameters:
+  # Modelo de Bedrock usado por crear_campeon y narrar_batalla.
+  # Por defecto Amazon Nova Micro (bajo costo). Se puede cambiar sin tocar el codigo.
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-micro-v1:0
+    Description: Identificador del modelo de Amazon Bedrock a invocar (API Converse).
+
+
+
+# ---------------------------------------------------------------------------
+# Configuracion comun a todas las funciones Lambda
+# ---------------------------------------------------------------------------
+Globals:
+  Function:
+    # CodeUri: backend/ hace que la carpeta backend/ sea la raiz del paquete,
+    # de modo que backend/shared/ se incluye automaticamente en cada Lambda y
+    # permite importar "shared.respuesta" desde cualquier funcion.
+    CodeUri: backend/
+    Runtime: python3.12
+    Architectures:
+      - arm64
+    MemorySize: 256
+    # Variables de entorno compartidas por todas las Lambdas.
+    Environment:
+      Variables:
+        BEDROCK_MODEL_ID: !Ref BedrockModelId
+        TABLE_NAME: !Ref CloudbornLegendsTable
+        ALLOWED_ORIGIN: !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+Resources:
+
+  # -------------------------------------------------------------------------
+  # Tabla unica DynamoDB: almacena campeones y su conteo de victorias.
+  # Clave de particion "PK" con formato "CAMPEON#<uuid>".
+  # -------------------------------------------------------------------------
+  CloudbornLegendsTable:
+    Type: AWS::DynamoDB::Table
+    # Conserva los campeones ante actualizaciones o eliminacion del stack.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # Pago por solicitud: capacidad bajo demanda, dentro de la capa gratuita.
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+
+  # -------------------------------------------------------------------------
+  # API Gateway REST con CORS habilitado y throttling para proteger el backend.
+  # -------------------------------------------------------------------------
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      # Etapa unica para la demo.
+      StageName: prod
+      # CORS: permite las llamadas del frontend desde CloudFront / localhost.
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      # Throttling global para mantenerse dentro de la capa gratuita.
+      MethodSettings:
+        - ResourcePath: '/*'
+          HttpMethod: '*'
+          ThrottlingRateLimit: 5
+          ThrottlingBurstLimit: 10
+
+      # Respuestas de error propias de API Gateway (429, 403, 5xx) con CORS,
+      # para que el navegador muestre el error real y no un error de CORS.
+      GatewayResponses:
+          DEFAULT_4XX:
+            ResponseParameters:
+              Headers:
+                Access-Control-Allow-Origin: "'*'"
+          DEFAULT_5XX:
+            ResponseParameters:
+              Headers:
+                Access-Control-Allow-Origin: "'*'"
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para crear_campeon: escribe en DynamoDB e invoca Bedrock.
+  # -------------------------------------------------------------------------
+  CrearCampeonRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: CrearCampeonPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Permiso minimo: solo PutItem sobre la tabla del juego.
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt CloudbornLegendsTable.Arn
+              # Permiso de invocacion de Bedrock (solo esta Lambda y narrar_batalla).
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para listar_campeones: solo lectura (Scan) en DynamoDB.
+  # -------------------------------------------------------------------------
+  ListarCampeonesRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ListarCampeonesPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                Resource: !GetAtt CloudbornLegendsTable.Arn
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para registrar_resultado: lectura y actualizacion puntual.
+  # -------------------------------------------------------------------------
+  RegistrarResultadoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: RegistrarResultadoPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # GetItem para verificar existencia del ganador; UpdateItem para sumar victoria.
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt CloudbornLegendsTable.Arn
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para obtener_ranking: solo lectura (Scan) en DynamoDB.
+  # -------------------------------------------------------------------------
+  ObtenerRankingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ObtenerRankingPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                Resource: !GetAtt CloudbornLegendsTable.Arn
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para narrar_batalla: solo invocacion de Bedrock (sin DynamoDB).
+  # -------------------------------------------------------------------------
+  NarrarBatallaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: NarrarBatallaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+
+  # -------------------------------------------------------------------------
+  # Lambda crear_campeon (POST /campeones): genera el campeon via Bedrock,
+  # lo valida y lo guarda en DynamoDB. Timeout de 15 s (Bedrock read_timeout=12).
+  # -------------------------------------------------------------------------
+  CrearCampeonFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: crear_campeon.app.lambda_handler
+      Timeout: 15
+      Role: !GetAtt CrearCampeonRole.Arn
+      Events:
+        CrearCampeon:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /campeones
+            Method: post
+
+  # -------------------------------------------------------------------------
+  # Lambda listar_campeones (GET /campeones): devuelve todos los campeones.
+  # Timeout de 10 s (DynamoDB read_timeout=5).
+  # -------------------------------------------------------------------------
+  ListarCampeonesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: listar_campeones.app.lambda_handler
+      Timeout: 10
+      Role: !GetAtt ListarCampeonesRole.Arn
+      Events:
+        ListarCampeones:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /campeones
+            Method: get
+
+  # -------------------------------------------------------------------------
+  # Lambda registrar_resultado (POST /resultados): incrementa la victoria del
+  # ganador (o no hace nada en empate). Timeout de 10 s.
+  # -------------------------------------------------------------------------
+  RegistrarResultadoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: registrar_resultado.app.lambda_handler
+      Timeout: 10
+      Role: !GetAtt RegistrarResultadoRole.Arn
+      Events:
+        RegistrarResultado:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /resultados
+            Method: post
+
+  # -------------------------------------------------------------------------
+  # Lambda obtener_ranking (GET /ranking): devuelve el Salon de las Leyendas
+  # ordenado por victorias. Timeout de 10 s.
+  # -------------------------------------------------------------------------
+  ObtenerRankingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: obtener_ranking.app.lambda_handler
+      Timeout: 10
+      Role: !GetAtt ObtenerRankingRole.Arn
+      Events:
+        ObtenerRanking:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /ranking
+            Method: get
+
+  # -------------------------------------------------------------------------
+  # Lambda narrar_batalla (POST /narraciones): genera la narracion via Bedrock
+  # con narracion de respaldo ante fallo. Timeout de 15 s (Bedrock read_timeout=12).
+  # -------------------------------------------------------------------------
+  NarrarBatallaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: narrar_batalla.app.lambda_handler
+      Timeout: 15
+      Role: !GetAtt NarrarBatallaRole.Arn
+      Events:
+        NarrarBatalla:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /narraciones
+            Method: post
+
+  # -------------------------------------------------------------------------
+  # Bucket S3 privado: aloja los archivos estaticos del frontend.
+  # Todo acceso publico bloqueado; solo CloudFront puede leerlo via OAC.
+  # -------------------------------------------------------------------------
+  FrontendBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      # Bloqueo total de acceso publico: el contenido solo se sirve por CloudFront.
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # -------------------------------------------------------------------------
+  # Origin Access Control (OAC): permite a CloudFront firmar las peticiones
+  # al bucket S3 privado sin exponerlo publicamente.
+  # -------------------------------------------------------------------------
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: CloudbornLegendsOAC
+        Description: OAC para que CloudFront acceda al bucket privado del frontend.
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # -------------------------------------------------------------------------
+  # Distribucion CloudFront: CDN que sirve el frontend desde el bucket S3
+  # privado usando el OAC. index.html como pagina raiz.
+  # -------------------------------------------------------------------------
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Distribucion CloudFront del frontend de Cloudborn Legends.
+        DefaultRootObject: index.html
+        Origins:
+          - Id: FrontendS3Origin
+            DomainName: !GetAtt FrontendBucket.RegionalDomainName
+            OriginAccessControlId: !Ref CloudFrontOriginAccessControl
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: FrontendS3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          # CachingOptimized (politica administrada por AWS).
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        # Las rutas SPA caen a index.html (evita 403/404 en recarga).
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+
+  # -------------------------------------------------------------------------
+  # Politica de bucket: autoriza solo a esta distribucion CloudFront a leer
+  # los objetos del bucket privado (condicion por ARN de la distribucion).
+  # -------------------------------------------------------------------------
+  FrontendBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref FrontendBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipalReadOnly
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${FrontendBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}'
+
+# ---------------------------------------------------------------------------
+# Outputs: URLs necesarias para el frontend y el script de despliegue.
+# ---------------------------------------------------------------------------
+Outputs:
+  # URL base de la API REST; se inyecta en frontend/config.js al desplegar.
+  ApiUrl:
+    Description: URL base del API Gateway REST de Cloudborn Legends.
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/prod'
+
+  # URL publica de CloudFront desde donde se sirve el juego.
+  CloudFrontUrl:
+    Description: URL de la distribucion CloudFront del frontend.
+    Value: !Sub 'https://${CloudFrontDistribution.DomainName}'

@@ -12,6 +12,18 @@
         "chatSessionId": "sess_b20d258f-272d-48f5-81fa-01b19019c13f",
         "timestamp": 1792720227336
       }
+    ],
+    "1.2 Crear `template.yaml` con recursos SAM completos": [
+      {
+        "executionId": "a179687d-1609-4847-b7db-3c49562d2a6f",
+        "chatSessionId": "sess_3f37e8e6-ee16-47d6-be60-b3017ef5ff73",
+        "timestamp": 1792720404438
+      },
+      {
+        "executionId": "a179687d-1609-4847-b7db-3c49562d2a6f",
+        "chatSessionId": "sess_3f37e8e6-ee16-47d6-be60-b3017ef5ff73",
+        "timestamp": 1792722065773
+      }
     ]
   }
 }
