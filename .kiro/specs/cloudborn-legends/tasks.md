@@ -117,7 +117,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Si DynamoDB no está disponible, devolver error HTTP 500 con mensaje en español usando `respuesta()`
     - _Requisitos: 9.1, 13.1, 13.2, 13.3, 13.4, 13.5_
 
-  - [ ]* 4.3 Escribir pruebas de propiedad para el orden e integridad del ranking (Property 15)
+  - [x] 4.3 Escribir pruebas de propiedad para el orden e integridad del ranking (Property 15)
     - **Propiedad 15: Invariante de orden del ranking**
     - **Valida: Requisitos 9.1, 9.3, 13.2**
     - Generar listas arbitrarias de campeones con victorias y nombres aleatorios; mockear DynamoDB; verificar orden desc por victorias, desempate asc por nombre, máximo 100 entradas y sin duplicados
