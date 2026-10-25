@@ -407,6 +407,18 @@
         "chatSessionId": "sess_be2fb777-f87e-4e38-bce1-4afc4fe29d0a",
         "timestamp": 1792957874505
       }
+    ],
+    "10.1 Escribir tests unitarios con ejemplos para el backend (Python)": [
+      {
+        "executionId": "a7137407-6a3b-4c73-87e5-8bba699e2acf",
+        "chatSessionId": "sess_2832038d-8232-49fd-b496-30a9374873ff",
+        "timestamp": 1792958246243
+      },
+      {
+        "executionId": "a7137407-6a3b-4c73-87e5-8bba699e2acf",
+        "chatSessionId": "sess_2832038d-8232-49fd-b496-30a9374873ff",
+        "timestamp": 1792958674364
+      }
     ]
   }
 }
