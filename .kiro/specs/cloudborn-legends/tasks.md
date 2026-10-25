@@ -263,14 +263,14 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
 - [ ] 9. Punto de control — frontend y combate completos
   - Ejecutar `npx vitest --run` para verificar que todos los tests de `combat.js` pasan. Consultar al usuario si surge alguna duda.
 
-- [ ] 10. Infraestructura de pruebas y pruebas unitarias con ejemplos
+- [x] 10. Infraestructura de pruebas y pruebas unitarias con ejemplos
   - [x] 10.1 Escribir tests unitarios con ejemplos para el backend (Python)
     - Tests para `listar_campeones`: respuesta vacía cuando no hay campeones en DynamoDB; respuesta HTTP 200 con arreglo cuando existen campeones
     - Tests para `obtener_ranking`: respuesta vacía cuando no hay campeones; orden correcto con empate de victorias
     - Tests para `crear_campeon`: rechazo de descripción límite inferior (9 chars) y aceptación de descripción límite exacto (10 y 500 chars); rechazo de habilidad fuera del catálogo con mensaje que nombra la habilidad
     - _Requisitos: 3.2, 4.4, 9.1, 11.3, 11.4, 13.2_
 
-  - [ ] 10.2 Escribir tests unitarios con ejemplos para el combate (JavaScript/Vitest)
+  - [x] 10.2 Escribir tests unitarios con ejemplos para el combate (JavaScript/Vitest)
     - Caso concreto: campeón A gana cuando HP de B llega a 0 y HP de A > 0
     - Caso concreto: empate cuando HP de ambos llega a 0 en el mismo tick
     - Caso concreto: ganador por tiempo a los 90 s con porcentajes de vida distintos

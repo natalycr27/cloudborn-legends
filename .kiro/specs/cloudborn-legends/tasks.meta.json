@@ -419,6 +419,25 @@
         "chatSessionId": "sess_2832038d-8232-49fd-b496-30a9374873ff",
         "timestamp": 1792958674364
       }
+    ],
+    "10.2 Escribir tests unitarios con ejemplos para el combate (JavaScript/Vitest)": [
+      {
+        "executionId": "d2296b29-fcd5-42bd-85e8-2bcde76b791d",
+        "chatSessionId": "sess_f5c0cd01-6364-48fa-8df4-3063b4977b10",
+        "timestamp": 1792959784164
+      },
+      {
+        "executionId": "d2296b29-fcd5-42bd-85e8-2bcde76b791d",
+        "chatSessionId": "sess_f5c0cd01-6364-48fa-8df4-3063b4977b10",
+        "timestamp": 1792960166633
+      }
+    ],
+    "10. Infraestructura de pruebas y pruebas unitarias con ejemplos": [
+      {
+        "executionId": "d2296b29-fcd5-42bd-85e8-2bcde76b791d",
+        "chatSessionId": "sess_f5c0cd01-6364-48fa-8df4-3063b4977b10",
+        "timestamp": 1792960166802
+      }
     ]
   }
 }
