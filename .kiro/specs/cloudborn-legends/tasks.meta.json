@@ -201,6 +201,85 @@
         "chatSessionId": "sess_57824df2-49ba-444d-a0c2-1dadc692307c",
         "timestamp": 1792901244365
       }
+    ],
+    "5.1 Implementar `registrar_resultado` (POST /resultados)": [
+      {
+        "executionId": "a8759841-d8f3-4097-8766-415eb2a08236",
+        "chatSessionId": "sess_5a4716f0-2659-4e6c-a0e6-e60b5bd6c12f",
+        "timestamp": 1792901348260
+      },
+      {
+        "executionId": "a8759841-d8f3-4097-8766-415eb2a08236",
+        "chatSessionId": "sess_5a4716f0-2659-4e6c-a0e6-e60b5bd6c12f",
+        "timestamp": 1792901443600
+      }
+    ],
+    "5.2 Escribir pruebas de propiedad para conservación, monotonía e integridad del registro (Properties 16, 17, 19)": [
+      {
+        "executionId": "a8e72f14-2309-4011-8880-407b2032a3e5",
+        "chatSessionId": "sess_149837bb-0bcd-4a32-8e20-768804a94619",
+        "timestamp": 1792901490711
+      },
+      {
+        "executionId": "a8e72f14-2309-4011-8880-407b2032a3e5",
+        "chatSessionId": "sess_149837bb-0bcd-4a32-8e20-768804a94619",
+        "timestamp": 1792901800292
+      }
+    ],
+    "5.3 Escribir prueba de propiedad para conservación del total de victorias (Property 18)": [
+      {
+        "executionId": "c9dccabf-b1bc-407d-8dd0-b1e3e3806e6f",
+        "chatSessionId": "sess_7686d7af-189c-4fe7-a4b1-9a30dab1fb52",
+        "timestamp": 1792901824649
+      },
+      {
+        "executionId": "c9dccabf-b1bc-407d-8dd0-b1e3e3806e6f",
+        "chatSessionId": "sess_7686d7af-189c-4fe7-a4b1-9a30dab1fb52",
+        "timestamp": 1792901946101
+      }
+    ],
+    "5.4 Implementar `narrar_batalla` (POST /narraciones)": [
+      {
+        "executionId": "6749c528-a17a-442c-8d21-f34789d60cae",
+        "chatSessionId": "sess_e6f6d537-b94d-4297-85a4-e9122523ece3",
+        "timestamp": 1792901976050
+      },
+      {
+        "executionId": "6749c528-a17a-442c-8d21-f34789d60cae",
+        "chatSessionId": "sess_e6f6d537-b94d-4297-85a4-e9122523ece3",
+        "timestamp": 1792902099958
+      }
+    ],
+    "5. Lambdas de escritura: `registrar_resultado` y `narrar_batalla`": [
+      {
+        "executionId": "6749c528-a17a-442c-8d21-f34789d60cae",
+        "chatSessionId": "sess_e6f6d537-b94d-4297-85a4-e9122523ece3",
+        "timestamp": 1792902100103
+      }
+    ],
+    "5.5 Escribir pruebas de propiedad para la narración de respaldo (Property 14)": [
+      {
+        "executionId": "ab26289d-b9cf-4a4e-966d-c3c1afe31ad1",
+        "chatSessionId": "sess_832f0a92-9ef9-4f95-8d8e-2cdf08e7f008",
+        "timestamp": 1792902154530
+      },
+      {
+        "executionId": "ab26289d-b9cf-4a4e-966d-c3c1afe31ad1",
+        "chatSessionId": "sess_832f0a92-9ef9-4f95-8d8e-2cdf08e7f008",
+        "timestamp": 1792902581271
+      }
+    ],
+    "5.6 Escribir prueba de propiedad para el rechazo de datos de batalla vacíos (Property 20)": [
+      {
+        "executionId": "e9192bbc-6e6c-4c33-a8c9-5fdc821a8595",
+        "chatSessionId": "sess_0e4dbd4a-ff71-49cc-b188-fd1d6cb25c80",
+        "timestamp": 1792902672979
+      },
+      {
+        "executionId": "e9192bbc-6e6c-4c33-a8c9-5fdc821a8595",
+        "chatSessionId": "sess_0e4dbd4a-ff71-49cc-b188-fd1d6cb25c80",
+        "timestamp": 1792902786610
+      }
     ]
   }
 }

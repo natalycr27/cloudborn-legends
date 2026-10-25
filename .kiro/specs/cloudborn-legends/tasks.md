@@ -122,39 +122,39 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - **Valida: Requisitos 9.1, 9.3, 13.2**
     - Generar listas arbitrarias de campeones con victorias y nombres aleatorios; mockear DynamoDB; verificar orden desc por victorias, desempate asc por nombre, máximo 100 entradas y sin duplicados
 
-- [ ] 5. Lambdas de escritura: `registrar_resultado` y `narrar_batalla`
-  - [ ] 5.1 Implementar `registrar_resultado` (POST /resultados)
+- [x] 5. Lambdas de escritura: `registrar_resultado` y `narrar_batalla`
+  - [x] 5.1 Implementar `registrar_resultado` (POST /resultados)
     - En `backend/registrar_resultado/app.py`, validar que el body incluya `campeonA`, `campeonB` y `resultado`; devolver HTTP 400 si falta alguno
     - Si `resultado == 'ganador'`, validar que `idGanador` no está vacío, corresponde a uno de los dos participantes y existe en DynamoDB (`GetItem`); devolver HTTP 400 con mensaje en español ante cualquier fallo sin modificar conteos
     - Si todo es válido, ejecutar `UpdateItem` con `ADD victorias :1` sobre el ganador; para empate, no modificar nada
     - Usar `read_timeout=5, connect_timeout=3` en el cliente DynamoDB; usar `respuesta()` para todas las respuestas
     - _Requisitos: 9.2, 9.4, 9.5, 12.1, 12.2, 12.3, 12.4, 12.5, 12.6_
 
-  - [ ]* 5.2 Escribir pruebas de propiedad para conservación, monotonía e integridad del registro (Properties 16, 17, 19)
+  - [x] 5.2 Escribir pruebas de propiedad para conservación, monotonía e integridad del registro (Properties 16, 17, 19)
     - **Propiedad 16: Aislamiento del incremento de victorias**
     - **Propiedad 17: El empate no modifica los conteos de victorias**
     - **Propiedad 19: Registro de resultado inválido rechazado sin efectos colaterales**
     - **Valida: Requisitos 9.2, 9.4, 9.5, 9.6, 12.2, 12.3, 12.4, 12.5, 12.6**
     - Usar pytest + Hypothesis con DynamoDB mockeado; verificar que solo el ganador incrementa en 1, que el empate no modifica nada, y que los errores HTTP 400 dejan los conteos intactos
 
-  - [ ]* 5.3 Escribir prueba de propiedad para conservación del total de victorias (Property 18)
+  - [x] 5.3 Escribir prueba de propiedad para conservación del total de victorias (Property 18)
     - **Propiedad 18: Conservación del total de victorias**
     - **Valida: Requisito 9.7**
     - Simular una secuencia de registros con ganador y empate; verificar que la suma de victorias iguala el número de resultados con ganador declarado
 
-  - [ ] 5.4 Implementar `narrar_batalla` (POST /narraciones)
+  - [x] 5.4 Implementar `narrar_batalla` (POST /narraciones)
     - En `backend/narrar_batalla/app.py`, validar que el body contiene el resultado y los datos de la batalla; devolver HTTP 400 con mensaje en español si está vacío o sin resultado
     - Crear cliente Bedrock con `read_timeout=12, connect_timeout=3, retries={"max_attempts": 1}`; construir system prompt y user message según el diseño; invocar `bedrock.converse(...)`
     - Verificar que el texto devuelto tiene entre 100 y 500 caracteres; si Bedrock falla, no responde en 12 s o el texto está fuera de rango, construir narración de respaldo con la plantilla del diseño y devolver HTTP 200 con `usadoRespaldo: true`
     - Usar `respuesta()` para todas las respuestas
     - _Requisitos: 8.1, 8.2, 8.3, 8.4, 14.1, 14.2, 14.3, 14.4, 14.5, 19.2, 19.3_
 
-  - [ ]* 5.5 Escribir pruebas de propiedad para la narración de respaldo (Property 14)
+  - [x] 5.5 Escribir pruebas de propiedad para la narración de respaldo (Property 14)
     - **Propiedad 14: Narración de respaldo válida ante falla de Bedrock**
     - **Valida: Requisitos 8.4, 14.3, 14.5, 19.3**
     - Usar Hypothesis; mockear Bedrock para que falle, dé timeout o devuelva texto fuera de rango; verificar HTTP 200, `usadoRespaldo: true`, narración en español de 100-500 caracteres con el resultado de la batalla
 
-  - [ ]* 5.6 Escribir prueba de propiedad para el rechazo de datos de batalla vacíos (Property 20)
+  - [x] 5.6 Escribir prueba de propiedad para el rechazo de datos de batalla vacíos (Property 20)
     - **Propiedad 20: Datos de batalla vacíos o sin resultado rechazados**
     - **Valida: Requisito 14.4**
     - Generar solicitudes con body vacío o sin campo `resultado`; verificar HTTP 400 con mensaje en español
