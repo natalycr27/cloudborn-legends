@@ -104,14 +104,14 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
   - Probar el endpoint con curl: `curl -X POST <ApiUrl>/campeones -H "Content-Type: application/json" -d '{"descripcion":"Un guerrero de fuego con escudo y proyectil"}'` y confirmar que se recibe un campeón JSON válido
   - Consultar al usuario si el despliegue o la prueba con curl falla
 
-- [ ] 4. Lambdas de consulta: `listar_campeones` y `obtener_ranking`
-  - [ ] 4.1 Implementar `listar_campeones` (GET /campeones)
+- [x] 4. Lambdas de consulta: `listar_campeones` y `obtener_ranking`
+  - [x] 4.1 Implementar `listar_campeones` (GET /campeones)
     - En `backend/listar_campeones/app.py`, crear cliente DynamoDB con `read_timeout=5, connect_timeout=3`
     - Ejecutar `Scan` sobre la tabla; devolver HTTP 200 con arreglo JSON (vacío si no hay ítems)
     - Si DynamoDB no responde en 5 s, devolver HTTP 500 con mensaje en español usando `respuesta()`
     - _Requisitos: 11.1, 11.2, 11.3, 11.4, 11.5_
 
-  - [ ] 4.2 Implementar `obtener_ranking` (GET /ranking)
+  - [x] 4.2 Implementar `obtener_ranking` (GET /ranking)
     - En `backend/obtener_ranking/app.py`, crear cliente DynamoDB con `read_timeout=5, connect_timeout=3`
     - Ejecutar `Scan`; ordenar en la Lambda por `victorias` descendente y `nombre` ascendente; devolver máximo 100 entradas con HTTP 200
     - Si DynamoDB no está disponible, devolver error HTTP 500 con mensaje en español usando `respuesta()`

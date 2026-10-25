@@ -158,6 +158,37 @@
         "chatSessionId": "sess_77932838-4ba8-4d8d-8cc2-d4ba43b95672",
         "timestamp": 1792898586445
       }
+    ],
+    "4.1 Implementar `listar_campeones` (GET /campeones)": [
+      {
+        "executionId": "d726599f-9ac3-444b-bcec-1be6c7d38a53",
+        "chatSessionId": "sess_d7dcfe53-8681-428c-bdad-a2246b614e36",
+        "timestamp": 1792900098513
+      },
+      {
+        "executionId": "d726599f-9ac3-444b-bcec-1be6c7d38a53",
+        "chatSessionId": "sess_d7dcfe53-8681-428c-bdad-a2246b614e36",
+        "timestamp": 1792900166298
+      }
+    ],
+    "4.2 Implementar `obtener_ranking` (GET /ranking)": [
+      {
+        "executionId": "7b4d9548-9325-44ed-b4e0-20ca1cbc8113",
+        "chatSessionId": "sess_f0f43ce0-6e72-4063-a8b4-44a3265cc2fe",
+        "timestamp": 1792900411811
+      },
+      {
+        "executionId": "7b4d9548-9325-44ed-b4e0-20ca1cbc8113",
+        "chatSessionId": "sess_f0f43ce0-6e72-4063-a8b4-44a3265cc2fe",
+        "timestamp": 1792900500083
+      }
+    ],
+    "4. Lambdas de consulta: `listar_campeones` y `obtener_ranking`": [
+      {
+        "executionId": "7b4d9548-9325-44ed-b4e0-20ca1cbc8113",
+        "chatSessionId": "sess_f0f43ce0-6e72-4063-a8b4-44a3265cc2fe",
+        "timestamp": 1792900500206
+      }
     ]
   }
 }
