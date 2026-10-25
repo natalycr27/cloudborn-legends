@@ -9,9 +9,13 @@
 //   - Validar la descripcion en el cliente (vacia, solo espacios, < 10 chars)
 //     y mostrar un error en espanol SIN llamar a la API.
 //   - Al enviar: mostrar "Tu leyenda esta naciendo en la nube..." durante la
-//     generacion; al exito mostrar el campeon (nombre, estadisticas, habilidades,
-//     colores) y pasarlo a SeleccionScene; al fallo mostrar un error en espanol
-//     conservando la descripcion ingresada y permitiendo reintentar.
+//     generacion; al exito NO pasar directo a SeleccionScene, sino mostrar una
+//     tarjeta del campeon (nombre grande, las cuatro estadisticas con barras de
+//     progreso, las habilidades como etiquetas y un circulo con sus dos colores)
+//     con dos botones: "Crear otro campeón" (limpia el formulario y lo vuelve a
+//     mostrar) e "Ir a la arena" (pasa a SeleccionScene). Al fallo mostrar un
+//     error en espanol conservando la descripcion ingresada y permitiendo
+//     reintentar.
 //
 // Nota de diseno: el input, el boton y el contador NO son objetos de Phaser,
 // son elementos HTML del overlay (mas accesibles y simples que un input propio
@@ -31,15 +35,29 @@ export default class InvocacionScene extends Phaser.Scene {
 
     // Referencias a los elementos del overlay HTML; se resuelven en create().
     this.overlay = null;
+    this.formulario = null;
     this.textarea = null;
     this.boton = null;
     this.contador = null;
     this.mensaje = null;
-    this.preview = null;
+
+    // Elementos de la tarjeta del campeon recien creado.
+    this.tarjeta = null;
+    this.tarjetaNombre = null;
+    this.tarjetaColores = null;
+    this.tarjetaEstadisticas = null;
+    this.tarjetaHabilidades = null;
+    this.botonCrearOtro = null;
+    this.botonIrArena = null;
+
+    // Campeon mostrado actualmente en la tarjeta (para "Ir a la arena").
+    this.campeonActual = null;
 
     // Manejadores guardados para poder desuscribirlos al apagar la escena.
     this.alEscribir = null;
     this.alInvocar = null;
+    this.alCrearOtro = null;
+    this.alIrArena = null;
 
     // Evita envios simultaneos mientras una invocacion esta en curso.
     this.generando = false;
@@ -50,10 +68,20 @@ export default class InvocacionScene extends Phaser.Scene {
   create() {
     // Localiza los elementos del overlay definidos en index.html.
     this.overlay = document.getElementById("overlay-invocacion");
+    this.formulario = document.getElementById("formulario-invocacion");
     this.textarea = document.getElementById("descripcion-campeon");
     this.boton = document.getElementById("boton-invocar");
     this.contador = document.getElementById("contador-caracteres");
     this.mensaje = document.getElementById("mensaje-invocacion");
+
+    // Elementos de la tarjeta del campeon recien creado.
+    this.tarjeta = document.getElementById("tarjeta-campeon");
+    this.tarjetaNombre = document.getElementById("tarjeta-nombre");
+    this.tarjetaColores = document.getElementById("tarjeta-colores");
+    this.tarjetaEstadisticas = document.getElementById("tarjeta-estadisticas");
+    this.tarjetaHabilidades = document.getElementById("tarjeta-habilidades");
+    this.botonCrearOtro = document.getElementById("boton-crear-otro");
+    this.botonIrArena = document.getElementById("boton-ir-arena");
 
     // Si el overlay no existe (p. ej. en un entorno de prueba sin DOM), no
     // continua para evitar errores; el resto del juego sigue funcionando.
@@ -61,10 +89,8 @@ export default class InvocacionScene extends Phaser.Scene {
       return;
     }
 
-    // Crea (una sola vez) el contenedor para previsualizar el campeon generado.
-    this.prepararPreview();
-
-    // Asegura un estado inicial limpio del mensaje y habilita el boton.
+    // Estado inicial: formulario visible, tarjeta oculta, mensaje limpio.
+    this.mostrarFormulario();
     this.limpiarMensaje();
     this.boton.disabled = false;
 
@@ -84,27 +110,33 @@ export default class InvocacionScene extends Phaser.Scene {
     this.alInvocar = () => this.invocarCampeon();
     this.boton.addEventListener("click", this.alInvocar);
 
+    // Botones de la tarjeta: crear otro campeon o ir a la arena.
+    if (this.botonCrearOtro) {
+      this.alCrearOtro = () => this.crearOtroCampeon();
+      this.botonCrearOtro.addEventListener("click", this.alCrearOtro);
+    }
+    if (this.botonIrArena) {
+      this.alIrArena = () => this.irASeleccion(this.campeonActual);
+      this.botonIrArena.addEventListener("click", this.alIrArena);
+    }
+
     // Limpia los listeners y oculta el overlay cuando la escena se apaga,
     // para no dejar eventos colgados ni el overlay visible en otras escenas.
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.alApagar, this);
   }
 
-  // Crea el contenedor de previsualizacion del campeon dentro del overlay si
-  // aun no existe. Se mantiene oculto hasta que haya un campeon que mostrar.
-  prepararPreview() {
-    this.preview = document.getElementById("preview-campeon");
-    if (!this.preview) {
-      this.preview = document.createElement("div");
-      this.preview.id = "preview-campeon";
-      this.preview.style.display = "none";
-      this.preview.style.marginTop = "8px";
-      this.preview.style.padding = "12px";
-      this.preview.style.borderRadius = "8px";
-      this.preview.style.background = "#141a33";
-      this.preview.style.border = "1px solid #3a4a7a";
-      this.preview.style.fontSize = "14px";
-      // Inserta el preview justo despues del mensaje de estado.
-      this.mensaje.insertAdjacentElement("afterend", this.preview);
+  // Muestra el formulario de invocacion y oculta la tarjeta del campeon.
+  mostrarFormulario() {
+    if (this.formulario) {
+      this.formulario.classList.remove("oculto");
+    }
+    this.ocultarTarjeta();
+  }
+
+  // Oculta y vacia la tarjeta del campeon.
+  ocultarTarjeta() {
+    if (this.tarjeta) {
+      this.tarjeta.classList.remove("visible");
     }
   }
 
@@ -149,7 +181,7 @@ export default class InvocacionScene extends Phaser.Scene {
     // Estado de carga: mensaje visible y boton deshabilitado (Requisito 2.2).
     this.generando = true;
     this.boton.disabled = true;
-    this.ocultarPreview();
+    this.ocultarTarjeta();
     this.mostrarCarga("Tu leyenda esta naciendo en la nube...");
 
     try {
@@ -186,11 +218,10 @@ export default class InvocacionScene extends Phaser.Scene {
         );
       }
 
-      // Exito: muestra el campeon generado (Requisito 2.3 / 2.6).
+      // Exito: NO pasa directo a SeleccionScene. Primero muestra la tarjeta
+      // del campeon generado (nombre, estadisticas, habilidades, colores) con
+      // los botones "Crear otro campeón" e "Ir a la arena" (Requisito 2.3 / 2.6).
       this.mostrarCampeon(datos);
-
-      // Pasa el campeon a SeleccionScene y oculta el overlay de invocacion.
-      this.irASeleccion(datos);
     } catch (error) {
       // Fallo de red o del backend: error en espanol conservando la
       // descripcion ingresada para permitir un nuevo intento (Requisito 2.4).
@@ -214,10 +245,10 @@ export default class InvocacionScene extends Phaser.Scene {
     this.mensaje.textContent = texto;
   }
 
-  // Muestra un mensaje de error en espanol (estilo de error) y oculta el
-  // preview del campeon.
+  // Muestra un mensaje de error en espanol (estilo de error) y oculta la
+  // tarjeta del campeon.
   mostrarError(texto) {
-    this.ocultarPreview();
+    this.ocultarTarjeta();
     this.mensaje.classList.add("error");
     this.mensaje.textContent = texto;
   }
@@ -230,48 +261,115 @@ export default class InvocacionScene extends Phaser.Scene {
     }
   }
 
-  // Oculta y vacia el contenedor de previsualizacion del campeon.
-  ocultarPreview() {
-    if (this.preview) {
-      this.preview.style.display = "none";
-      this.preview.innerHTML = "";
-    }
-  }
+  // Rangos fijos de cada estadistica (coinciden con el backend) usados para
+  // calcular el porcentaje de llenado de cada barra de progreso.
+  //   vida 800-1200, dano 50-150, velocidad 200-400, armadura 10-50.
+  static RANGOS = {
+    vida: { min: 800, max: 1200, etiqueta: "Vida" },
+    dano: { min: 50, max: 150, etiqueta: "Daño" },
+    velocidad: { min: 200, max: 400, etiqueta: "Velocidad" },
+    armadura: { min: 10, max: 50, etiqueta: "Armadura" },
+  };
 
-  // Renderiza el campeon generado dentro del overlay: nombre, las cuatro
-  // estadisticas, las habilidades y los dos colores (Requisito 2.3 / 2.6).
+  // Renderiza la tarjeta del campeon generado dentro del overlay: nombre
+  // grande, las cuatro estadisticas con barras de progreso, las habilidades
+  // como etiquetas y un circulo con los dos colores (Requisito 2.3 / 2.6).
   mostrarCampeon(campeon) {
     this.limpiarMensaje();
+    this.campeonActual = campeon;
 
     const estad = campeon.estadisticas || {};
     const habilidades = Array.isArray(campeon.habilidades)
       ? campeon.habilidades
       : [];
 
-    // Pequenas muestras de color para el color principal y el secundario.
-    const muestra = (color) =>
-      `<span style="display:inline-block;width:16px;height:16px;border-radius:4px;` +
-      `vertical-align:middle;border:1px solid #0b1020;background:${this.colorSeguro(
-        color
-      )}"></span>`;
+    // Nombre grande del campeon.
+    if (this.tarjetaNombre) {
+      this.tarjetaNombre.textContent = campeon.nombre || "Campeón";
+    }
 
-    this.preview.innerHTML =
-      `<div style="font-weight:600;font-size:18px;margin-bottom:8px">${this.escapar(
-        campeon.nombre
-      )}</div>` +
-      `<div>Vida: ${estad.vida ?? "-"} &middot; Dano: ${estad.dano ?? "-"} ` +
-      `&middot; Velocidad: ${estad.velocidad ?? "-"} &middot; Armadura: ${
-        estad.armadura ?? "-"
-      }</div>` +
-      `<div style="margin-top:6px">Habilidades: ${
-        habilidades.length ? habilidades.map((h) => this.escapar(h)).join(", ") : "-"
-      }</div>` +
-      `<div style="margin-top:6px;display:flex;align-items:center;gap:8px">` +
-      `Colores: ${muestra(campeon.colorPrincipal)} ${muestra(
-        campeon.colorSecundario
-      )}</div>`;
+    // Circulo dividido en dos mitades con el color principal y el secundario.
+    if (this.tarjetaColores) {
+      const principal = this.colorSeguro(campeon.colorPrincipal);
+      const secundario = this.colorSeguro(campeon.colorSecundario);
+      this.tarjetaColores.style.background = `linear-gradient(135deg, ${principal} 0%, ${principal} 50%, ${secundario} 50%, ${secundario} 100%)`;
+      this.tarjetaColores.setAttribute(
+        "aria-label",
+        `Colores del campeón: principal ${principal}, secundario ${secundario}`
+      );
+    }
 
-    this.preview.style.display = "block";
+    // Estadisticas con barras de progreso, cada una escalada a su rango.
+    if (this.tarjetaEstadisticas) {
+      this.tarjetaEstadisticas.innerHTML = Object.entries(
+        InvocacionScene.RANGOS
+      )
+        .map(([clave, rango]) => {
+          const valor = estad[clave];
+          const numero = typeof valor === "number" ? valor : null;
+          const porcentaje =
+            numero == null
+              ? 0
+              : Math.max(
+                  0,
+                  Math.min(
+                    100,
+                    ((numero - rango.min) / (rango.max - rango.min)) * 100
+                  )
+                );
+          const textoValor = numero == null ? "-" : numero;
+          return (
+            `<div class="estadistica">` +
+            `<div class="estadistica-cabecera">` +
+            `<span>${rango.etiqueta}</span>` +
+            `<span class="estadistica-valor">${textoValor}</span>` +
+            `</div>` +
+            `<div class="barra"><div class="barra-relleno" style="width:${porcentaje}%"></div></div>` +
+            `</div>`
+          );
+        })
+        .join("");
+    }
+
+    // Habilidades como etiquetas tipo "chip".
+    if (this.tarjetaHabilidades) {
+      this.tarjetaHabilidades.innerHTML = habilidades.length
+        ? habilidades
+            .map(
+              (h) =>
+                `<span class="habilidad-etiqueta">${this.escapar(h)}</span>`
+            )
+            .join("")
+        : `<span class="habilidad-etiqueta">Sin habilidades</span>`;
+    }
+
+    // Oculta el formulario y muestra la tarjeta.
+    if (this.formulario) {
+      this.formulario.classList.add("oculto");
+    }
+    if (this.tarjeta) {
+      this.tarjeta.classList.add("visible");
+    }
+    if (this.botonIrArena) {
+      this.botonIrArena.focus();
+    }
+  }
+
+  // "Crear otro campeón": limpia el formulario y vuelve a mostrarlo.
+  crearOtroCampeon() {
+    this.campeonActual = null;
+    if (this.textarea) {
+      this.textarea.value = "";
+    }
+    this.limpiarMensaje();
+    this.actualizarContador();
+    this.mostrarFormulario();
+    if (this.boton) {
+      this.boton.disabled = false;
+    }
+    if (this.textarea) {
+      this.textarea.focus();
+    }
   }
 
   // Devuelve un color CSS seguro; si el valor no parece un color valido usa
@@ -293,9 +391,13 @@ export default class InvocacionScene extends Phaser.Scene {
       .replace(/"/g, "&quot;");
   }
 
-  // Oculta el overlay y transiciona a SeleccionScene pasando el campeon
-  // recien creado para que quede disponible como oponente.
+  // "Ir a la arena": oculta el overlay y transiciona a SeleccionScene pasando
+  // el campeon recien creado para que quede disponible como oponente.
   irASeleccion(campeon) {
+    // Sin un campeon valido no hay nada que llevar a la arena.
+    if (!campeon) {
+      return;
+    }
     this.overlay.classList.remove("visible");
     this.scene.start("SeleccionScene", { campeonCreado: campeon });
   }
@@ -309,10 +411,18 @@ export default class InvocacionScene extends Phaser.Scene {
     if (this.boton && this.alInvocar) {
       this.boton.removeEventListener("click", this.alInvocar);
     }
+    if (this.botonCrearOtro && this.alCrearOtro) {
+      this.botonCrearOtro.removeEventListener("click", this.alCrearOtro);
+    }
+    if (this.botonIrArena && this.alIrArena) {
+      this.botonIrArena.removeEventListener("click", this.alIrArena);
+    }
     if (this.overlay) {
       this.overlay.classList.remove("visible");
     }
     this.alEscribir = null;
     this.alInvocar = null;
+    this.alCrearOtro = null;
+    this.alIrArena = null;
   }
 }

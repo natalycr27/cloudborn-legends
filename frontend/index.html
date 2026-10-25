@@ -67,6 +67,18 @@
         display: flex;
       }
 
+      /* Contenedor del formulario de invocacion: conserva la columna con
+         separacion entre textarea, contador, boton y mensaje. */
+      #formulario-invocacion {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      /* La escena oculta el formulario mientras muestra la tarjeta. */
+      #formulario-invocacion.oculto {
+        display: none;
+      }
+
       #titulo-invocacion {
         margin: 0;
         /* Tamano fluido para que "Invoca tu leyenda" se vea completo y sin
@@ -126,6 +138,138 @@
         color: #ff7a7a;
       }
 
+      /* -----------------------------------------------------------------
+         Tarjeta del campeon recien creado (preview).
+         Tras un POST /campeones exitoso, InvocacionScene oculta el formulario
+         y muestra esta tarjeta con el nombre, las cuatro estadisticas con
+         barras de progreso, las habilidades como etiquetas y un circulo con
+         los dos colores del campeon. Mantiene el mismo estilo visual del
+         overlay (paleta #0b1020 / #141a33 / #4f6bff y tipografia del body).
+         ----------------------------------------------------------------- */
+      #tarjeta-campeon {
+        display: none; /* oculta hasta que haya un campeon que mostrar */
+        flex-direction: column;
+        gap: 16px;
+        padding: 20px;
+        border-radius: 12px;
+        background: #141a33;
+        border: 2px solid #3a4a7a;
+      }
+      #tarjeta-campeon.visible {
+        display: flex;
+      }
+
+      /* Cabecera: nombre grande a la izquierda y circulo de colores a la derecha. */
+      .tarjeta-cabecera {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      #tarjeta-nombre {
+        margin: 0;
+        font-size: clamp(22px, 5vw, 34px);
+        line-height: 1.2;
+        word-break: break-word;
+      }
+
+      /* Circulo dividido en dos mitades con el color principal y el secundario. */
+      #tarjeta-colores {
+        flex: 0 0 auto;
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        border: 2px solid #0b1020;
+        box-shadow: 0 0 0 1px #3a4a7a;
+      }
+
+      /* Bloque de las cuatro estadisticas con barras de progreso. */
+      #tarjeta-estadisticas {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .estadistica {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .estadistica-cabecera {
+        display: flex;
+        justify-content: space-between;
+        font-size: 14px;
+        color: #9fb0d8;
+      }
+      .estadistica-valor {
+        color: #e8eefc;
+        font-variant-numeric: tabular-nums;
+      }
+      /* Riel de la barra de progreso. */
+      .barra {
+        width: 100%;
+        height: 10px;
+        border-radius: 999px;
+        background: #0b1020;
+        border: 1px solid #3a4a7a;
+        overflow: hidden;
+      }
+      /* Relleno de la barra; su ancho lo fija la escena segun el valor. */
+      .barra-relleno {
+        height: 100%;
+        border-radius: 999px;
+        background: linear-gradient(90deg, #4f6bff, #7f93ff);
+        transition: width 0.4s ease;
+      }
+
+      /* Habilidades como etiquetas tipo "chip". */
+      #tarjeta-habilidades {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .habilidad-etiqueta {
+        display: inline-block;
+        padding: 6px 12px;
+        font-size: 13px;
+        border-radius: 999px;
+        background: #2a335a;
+        border: 1px solid #4f6bff;
+        color: #e8eefc;
+      }
+
+      /* Botones de accion de la tarjeta. */
+      #tarjeta-acciones {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      #tarjeta-acciones button {
+        flex: 1 1 160px;
+        min-height: 44px;
+        padding: 12px 16px;
+        font-size: 16px;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      #boton-crear-otro {
+        background: #2a335a;
+        color: #e8eefc;
+        border: 1px solid #4f6bff;
+      }
+      #boton-crear-otro:hover {
+        background: #333e6e;
+      }
+      #boton-ir-arena {
+        background: #4f6bff;
+        color: #ffffff;
+      }
+      #boton-ir-arena:hover {
+        background: #3a56ee;
+      }
+
       /* En pantallas grandes (>= 768px) el overlay puede ensancharse un poco
          mas; la responsividad detallada vive en las escenas (tarea 8.5). */
       @media (min-width: 768px) {
@@ -140,17 +284,41 @@
     <div id="contenedor-juego">
       <!-- Overlay HTML de la pantalla de invocacion (controlado por InvocacionScene). -->
       <div id="overlay-invocacion">
-        <h1 id="titulo-invocacion">Invoca tu leyenda</h1>
-        <textarea
-          id="descripcion-campeon"
-          minlength="10"
-          maxlength="500"
-          placeholder="Describe tu campeon (entre 10 y 500 caracteres)..."
-          aria-label="Descripcion del campeon"
-        ></textarea>
-        <div id="contador-caracteres">0 / 500</div>
-        <button id="boton-invocar" type="button">Invocar</button>
-        <div id="mensaje-invocacion"></div>
+        <!-- Formulario de invocacion. InvocacionScene lo oculta al mostrar la
+             tarjeta del campeon creado y lo vuelve a mostrar con "Crear otro". -->
+        <div id="formulario-invocacion">
+          <h1 id="titulo-invocacion">Invoca tu leyenda</h1>
+          <textarea
+            id="descripcion-campeon"
+            minlength="10"
+            maxlength="500"
+            placeholder="Describe tu campeon (entre 10 y 500 caracteres)..."
+            aria-label="Descripcion del campeon"
+          ></textarea>
+          <div id="contador-caracteres">0 / 500</div>
+          <button id="boton-invocar" type="button">Invocar</button>
+          <div id="mensaje-invocacion"></div>
+        </div>
+
+        <!-- Tarjeta del campeon recien creado. Oculta hasta que un POST
+             /campeones exitoso la rellene (nombre, estadisticas con barras,
+             habilidades como etiquetas y circulo de colores). -->
+        <div id="tarjeta-campeon" aria-live="polite">
+          <div class="tarjeta-cabecera">
+            <h2 id="tarjeta-nombre"></h2>
+            <div
+              id="tarjeta-colores"
+              role="img"
+              aria-label="Colores del campeon"
+            ></div>
+          </div>
+          <div id="tarjeta-estadisticas"></div>
+          <div id="tarjeta-habilidades"></div>
+          <div id="tarjeta-acciones">
+            <button id="boton-crear-otro" type="button">Crear otro campeón</button>
+            <button id="boton-ir-arena" type="button">Ir a la arena</button>
+          </div>
+        </div>
       </div>
     </div>
 
