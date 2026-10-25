@@ -60,7 +60,7 @@ SYSTEM_PROMPT = (
     }
 
     Reglas:
-    - "nombre": un nombre épico en español de máximo 30 caracteres, sin paréntesis ni explicaciones.
+    - "nombre": un nombre épico en español de máximo 30 caracteres, sin paréntesis ni explicaciones. El nombre debe ser apto para todo público: sin groserías, insultos ni referencias a personas reales.
     - Todas las estadísticas son números enteros dentro de estos rangos: vida 800-1200, dano 50-150, velocidad 200-400, armadura 10-50.
     - Las estadísticas deben reflejar la descripción y estar BALANCEADAS: si el campeón es fuerte en algo, debe ser débil en otra cosa. Un tanque tiene mucha vida y armadura pero poca velocidad; un asesino tiene mucho daño y velocidad pero poca vida. Nunca pongas todas las estadísticas cerca del máximo.
     - "habilidades": entre 2 y 3 elementos distintos, elegidos solo de: "proyectil", "escudo", "curacion", "embestida", "area_de_dano".
@@ -126,32 +126,52 @@ def _construir_mensaje_usuario(descripcion):
 
 
 def _invocar_bedrock(descripcion):
-    """Invoca Bedrock (API Converse) y devuelve el texto generado.
+    """Invoca Bedrock (API Converse) y devuelve (texto_generado, stop_reason).
 
     Usa el modelo indicado por la variable de entorno BEDROCK_MODEL_ID
     (por defecto amazon.nova-micro-v1:0, Requirement 3.6) con maxTokens=800 y
-    temperature=0.7. Extrae el texto de la respuesta Converse para parsearlo
-    como JSON y persistirlo.
+    temperature=0.7. Si estan definidas las variables GUARDRAIL_ID y
+    GUARDRAIL_VERSION, aplica el Bedrock Guardrail sobre la entrada del usuario
+    y la salida del modelo (guardrailConfig). Devuelve el texto generado para
+    parsearlo como JSON y el stopReason de la respuesta Converse: cuando el
+    Guardrail interviene, stopReason == "guardrail_intervened".
     """
     model_id = os.environ.get("BEDROCK_MODEL_ID", "amazon.nova-micro-v1:0")
 
-    salida = _bedrock.converse(
-        modelId=model_id,
-        messages=[
+    # Argumentos base de la llamada Converse.
+    kwargs = {
+        "modelId": model_id,
+        "messages": [
             {
                 "role": "user",
                 "content": [{"text": _construir_mensaje_usuario(descripcion)}],
             }
         ],
-        system=[{"text": SYSTEM_PROMPT}],
-        inferenceConfig={
+        "system": [{"text": SYSTEM_PROMPT}],
+        "inferenceConfig": {
             "maxTokens": 800,
             "temperature": 0.7,
         },
-    )
+    }
+
+    # Aplicar el Guardrail solo si estan configuradas ambas variables de
+    # entorno; asi el codigo sigue funcionando en entornos sin Guardrail.
+    guardrail_id = os.environ.get("GUARDRAIL_ID")
+    guardrail_version = os.environ.get("GUARDRAIL_VERSION")
+    if guardrail_id and guardrail_version:
+        kwargs["guardrailConfig"] = {
+            "guardrailIdentifier": guardrail_id,
+            "guardrailVersion": guardrail_version,
+        }
+
+    salida = _bedrock.converse(**kwargs)
+
+    # stopReason indica si el Guardrail intervino ("guardrail_intervened").
+    stop_reason = salida.get("stopReason")
 
     # Texto generado por el modelo; se parsea como JSON mas adelante.
-    return salida["output"]["message"]["content"][0]["text"]
+    texto = salida["output"]["message"]["content"][0]["text"]
+    return texto, stop_reason
 
 
 def _extraer_json(texto):
@@ -269,12 +289,22 @@ def lambda_handler(event, context):
     # Invocar Bedrock para generar el campeon (Requirements 3.1, 10.1, 19.1).
     # Un fallo o timeout de Bedrock se traduce en HTTP 500 sin almacenar nada.
     try:
-        texto_generado = _invocar_bedrock(descripcion)
+        texto_generado, stop_reason = _invocar_bedrock(descripcion)
     except (BotoCoreError, ClientError, KeyError, IndexError) as e:
         print(f"ERROR Bedrock: {e}")
         return respuesta(
             500,
             {"error": "No se pudo generar el campeón porque el servicio de IA no respondió"},
+            event,
+        )
+
+    # Si el Bedrock Guardrail intervino (entrada o salida ofensiva), se bloquea
+    # la creacion: HTTP 400 con mensaje en español y sin guardar nada.
+    if stop_reason == "guardrail_intervened":
+        print("GUARDRAIL: intervencion del guardrail, descripcion bloqueada")
+        return respuesta(
+            400,
+            {"error": "Tu descripción contiene contenido no permitido. Intenta con otra leyenda."},
             event,
         )
 

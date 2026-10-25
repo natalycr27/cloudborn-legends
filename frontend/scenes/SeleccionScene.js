@@ -2,23 +2,27 @@
 //
 // Responsabilidades (tarea 8.3):
 //   - Llamar a GET /campeones y mostrar todos los campeones almacenados como
-//     una lista de tarjetas (Requisitos 11.1 / 11.2).
+//     tarjetas (Requisitos 11.1 / 11.2).
 //   - Mostrar cada campeon con su nombre, las cuatro estadisticas (Vida, Daño,
-//     Velocidad, Armadura) y sus dos colores como un circulo partido en dos
-//     mitades (Requisitos 11.3 / 11.4).
-//   - Manejar el arreglo vacio con un mensaje amable en espanol y los fallos
-//     de red / HTTP 500 con un mensaje de error en espanol (Requisito 11.2 y
-//     tolerancia a fallos del endpoint).
-//   - Permitir seleccionar exactamente DOS campeones distintos y, al confirmar,
-//     iniciar ArenaScene pasando ambos campeones para comenzar el combate
-//     (Requisito 6.1). Mientras no haya dos seleccionados, mostrar una pista en
-//     espanol y mantener el boton de confirmar deshabilitado.
+//     Velocidad, Armadura) con barras, sus habilidades como etiquetas y sus dos
+//     colores como un circulo partido en dos mitades (Requisitos 11.3 / 11.4).
+//   - Manejar el arreglo vacio con un mensaje amable en espanol y los fallos de
+//     red / HTTP 500 con un mensaje de error en espanol.
+//   - Permitir seleccionar exactamente DOS campeones distintos (resaltandolos) y,
+//     al confirmar, iniciar ArenaScene pasando ambos campeones (Requisito 6.1).
+//     El boton "Iniciar combate" queda deshabilitado hasta tener dos.
 //
-// Nota de diseno: esta escena es autocontenida y se renderiza con objetos
-// nativos de Phaser (texto, rectangulos, graficos). No usa overlay HTML, por lo
-// que no necesita tocar index.html ni limpiar listeners del DOM. La escena
-// previa (InvocacionScene) la arranca con { campeonCreado } para poder resaltar
-// al campeon recien invocado.
+// Nota de diseno: igual que InvocacionScene y RankingScene, esta escena NO
+// dibuja con objetos de Phaser, sino que controla un overlay HTML definido en
+// index.html (#overlay-seleccion). Asi la UI es verdaderamente responsiva via
+// CSS (cuadricula de una sola columna < 768px y varias columnas >= 768px con
+// auto-fit + minmax(260px, 1fr), centrada con max-width 1100px y margin auto),
+// el texto no se ve borroso por el escalado del canvas y el boton "Iniciar
+// combate" puede quedar fijo abajo en movil. La version movil es prioritaria
+// porque el publico juega escaneando un QR desde el celular. El overlay se
+// muestra al entrar en la escena y se oculta al salir. La escena previa
+// (InvocacionScene) la arranca con { campeonCreado } para preseleccionar al
+// campeon recien invocado.
 
 import { API_URL } from "../src/main.js";
 
@@ -32,23 +36,12 @@ const RANGOS_ESTADISTICAS = [
   { clave: "armadura", etiqueta: "Armadura", min: 10, max: 50 },
 ];
 
-// Paleta reutilizada (coincide con index.html / las demas escenas).
-const COLOR_FONDO = "#0b1020";
-const COLOR_TARJETA = 0x141a33;
-const COLOR_BORDE = 0x3a4a7a;
-const COLOR_BORDE_SELECCION = 0x4f6bff;
-const COLOR_RIEL = 0x0b1020;
-const COLOR_RELLENO = 0x4f6bff;
-const COLOR_TEXTO = "#e8eefc";
-const COLOR_TEXTO_TENUE = "#9fb0d8";
-const COLOR_ERROR = "#ff7a7a";
-
 export default class SeleccionScene extends Phaser.Scene {
   // Registra la escena con la clave "SeleccionScene" usada por main.js.
   constructor() {
     super("SeleccionScene");
 
-    // Campeon recien creado por InvocacionScene (para resaltarlo si llega).
+    // Campeon recien creado por InvocacionScene (para preseleccionarlo si llega).
     this.campeonCreado = null;
 
     // Estado de datos y seleccion.
@@ -56,14 +49,17 @@ export default class SeleccionScene extends Phaser.Scene {
     // Ids de los campeones seleccionados, en orden de seleccion (maximo 2).
     this.seleccionados = [];
 
-    // Objetos de UI persistentes.
-    this.contenedorLista = null;
-    this.textoMensaje = null;
-    this.textoPista = null;
-    this.botonConfirmar = null;
-    this.textoBotonConfirmar = null;
-    // Mapa id -> referencias graficas de cada tarjeta (para re-estilizar).
-    this.tarjetasPorId = new Map();
+    // Referencias a los elementos del overlay HTML; se resuelven en create().
+    this.overlay = null;
+    this.pista = null;
+    this.mensaje = null;
+    this.lista = null;
+    this.boton = null;
+
+    // Manejadores guardados para desuscribirlos al apagar la escena.
+    this.alIniciar = null;
+    // Manejador delegado de clicks sobre las tarjetas de la lista.
+    this.alClickLista = null;
   }
 
   // Lee los datos entrantes de la escena previa antes de create().
@@ -73,85 +69,51 @@ export default class SeleccionScene extends Phaser.Scene {
     // Reinicia el estado por si la escena se reutiliza.
     this.campeones = [];
     this.seleccionados = [];
-    this.tarjetasPorId = new Map();
   }
 
-  // Dibuja la cabecera fija y lanza la carga de campeones desde la API.
+  // Al crearse la escena: resuelve el overlay HTML, lo muestra y pide los
+  // campeones a la API.
   create() {
-    const { width } = this.scale;
+    // Localiza los elementos del overlay definidos en index.html.
+    this.overlay = document.getElementById("overlay-seleccion");
+    this.pista = document.getElementById("pista-seleccion");
+    this.mensaje = document.getElementById("mensaje-seleccion");
+    this.lista = document.getElementById("lista-seleccion");
+    this.boton = document.getElementById("boton-iniciar-combate");
 
-    // Fondo solido para que la escena no herede residuos de otras escenas.
-    this.cameras.main.setBackgroundColor(COLOR_FONDO);
+    // Si el overlay no existe (p. ej. en un entorno de prueba sin DOM), no
+    // continua para evitar errores; el resto del juego sigue funcionando.
+    if (!this.overlay || !this.lista) {
+      return;
+    }
 
-    // Titulo de la pantalla.
-    this.add
-      .text(width / 2, 36, "Elige dos campeones", {
-        fontFamily: "sans-serif",
-        fontSize: "28px",
-        fontStyle: "bold",
-        color: COLOR_TEXTO,
-      })
-      .setOrigin(0.5);
+    // Estado inicial: lista limpia y overlay visible por encima del canvas.
+    this.lista.innerHTML = "";
+    this.overlay.classList.add("visible");
+    this.overlay.scrollTop = 0;
 
-    // Pista dinamica que indica cuantos campeones faltan por seleccionar.
-    this.textoPista = this.add
-      .text(width / 2, 70, "", {
-        fontFamily: "sans-serif",
-        fontSize: "15px",
-        color: COLOR_TEXTO_TENUE,
-      })
-      .setOrigin(0.5);
+    // Boton "Iniciar combate": solo transiciona si hay dos seleccionados.
+    if (this.boton) {
+      this.alIniciar = () => this.confirmarSeleccion();
+      this.boton.addEventListener("click", this.alIniciar);
+    }
 
-    // Mensaje central para estados de carga / vacio / error.
-    this.textoMensaje = this.add
-      .text(width / 2, 260, "Cargando campeones...", {
-        fontFamily: "sans-serif",
-        fontSize: "18px",
-        color: COLOR_TEXTO_TENUE,
-        align: "center",
-        wordWrap: { width: width - 80 },
-      })
-      .setOrigin(0.5);
+    // Click delegado sobre la lista: alterna la seleccion de la tarjeta pulsada.
+    this.alClickLista = (evento) => {
+      const tarjeta = evento.target.closest(".tarjeta-seleccion");
+      if (tarjeta && tarjeta.dataset.id != null) {
+        this.alternarSeleccion(tarjeta.dataset.id);
+      }
+    };
+    this.lista.addEventListener("click", this.alClickLista);
 
-    // Contenedor que agrupa las tarjetas de campeones (facilita limpiarlas).
-    this.contenedorLista = this.add.container(0, 0);
+    // Limpia los listeners y oculta el overlay cuando la escena se apaga.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.alApagar, this);
 
-    // Boton de confirmar (inicialmente deshabilitado hasta tener dos).
-    this.crearBotonConfirmar();
-
-    // Pide los campeones a la API.
+    // Estado inicial del boton y la pista, y carga de campeones.
+    this.actualizarBoton();
+    this.actualizarPista();
     this.cargarCampeones();
-  }
-
-  // Crea el boton "Iniciar combate" en la parte inferior de la pantalla.
-  crearBotonConfirmar() {
-    const { width, height } = this.scale;
-    const anchoBoton = 240;
-    const altoBoton = 48;
-    const x = width / 2;
-    const y = height - 40;
-
-    // Fondo del boton como rectangulo redondeado interactivo.
-    this.botonConfirmar = this.add
-      .rectangle(x, y, anchoBoton, altoBoton, COLOR_BORDE_SELECCION)
-      .setStrokeStyle(2, COLOR_BORDE_SELECCION)
-      .setInteractive({ useHandCursor: true });
-
-    // Etiqueta del boton.
-    this.textoBotonConfirmar = this.add
-      .text(x, y, "Iniciar combate", {
-        fontFamily: "sans-serif",
-        fontSize: "18px",
-        fontStyle: "bold",
-        color: COLOR_TEXTO,
-      })
-      .setOrigin(0.5);
-
-    // Al pulsar: solo inicia el combate si hay exactamente dos seleccionados.
-    this.botonConfirmar.on("pointerup", () => this.confirmarSeleccion());
-
-    // Estado visual inicial: deshabilitado.
-    this.actualizarBotonConfirmar();
   }
 
   // Llama a GET /campeones y, segun el resultado, muestra la lista, el estado
@@ -187,22 +149,33 @@ export default class SeleccionScene extends Phaser.Scene {
 
       // Arreglo vacio: mensaje amable invitando a crear un campeon (Req. 11.4).
       if (this.campeones.length === 0) {
+        this.lista.innerHTML = "";
         this.mostrarMensaje(
           "No hay campeones todavia. Invoca uno para empezar.",
           false
         );
         this.actualizarPista();
-        this.actualizarBotonConfirmar();
+        this.actualizarBoton();
         return;
       }
 
       // Hay campeones: ocultar el mensaje y renderizar la lista.
       this.ocultarMensaje();
       this.renderizarLista();
+
+      // Preselecciona al campeon recien creado (si llego de InvocacionScene).
+      if (this.campeonCreado) {
+        const id = this.idDe(this.campeonCreado);
+        if (this.campeones.some((c) => this.idDe(c) === id)) {
+          this.alternarSeleccion(id);
+        }
+      }
+
       this.actualizarPista();
-      this.actualizarBotonConfirmar();
+      this.actualizarBoton();
     } catch (error) {
       // Fallo de red o HTTP 500: mensaje de error en espanol (Requisito 11.5).
+      this.lista.innerHTML = "";
       this.mostrarMensaje(
         error && error.message
           ? error.message
@@ -212,149 +185,78 @@ export default class SeleccionScene extends Phaser.Scene {
     }
   }
 
-  // Renderiza una tarjeta por cada campeon dentro del contenedor de la lista.
+  // Renderiza una tarjeta por cada campeon dentro de la rejilla de la lista.
+  // Cada tarjeta lleva data-id para poder identificarla en el click delegado.
   renderizarLista() {
-    // Limpia cualquier tarjeta previa antes de volver a dibujar.
-    this.contenedorLista.removeAll(true);
-    this.tarjetasPorId = new Map();
-
-    const { width } = this.scale;
-
-    // Disposicion en rejilla: hasta 3 columnas segun el ancho disponible.
-    const margen = 24;
-    const separacion = 16;
-    const anchoDisponible = width - margen * 2;
-    const columnas = Math.max(1, Math.min(3, Math.floor(anchoDisponible / 240)));
-    const anchoTarjeta = Math.floor(
-      (anchoDisponible - separacion * (columnas - 1)) / columnas
-    );
-    const altoTarjeta = 190;
-    const filaInicialY = 100;
-
-    this.campeones.forEach((campeon, indice) => {
-      const columna = indice % columnas;
-      const fila = Math.floor(indice / columnas);
-      const x = margen + columna * (anchoTarjeta + separacion);
-      const y = filaInicialY + fila * (altoTarjeta + separacion);
-      this.crearTarjetaCampeon(campeon, x, y, anchoTarjeta, altoTarjeta);
-    });
+    this.lista.innerHTML = this.campeones
+      .map((campeon) => this.plantillaTarjeta(campeon))
+      .join("");
   }
 
-  // Dibuja la tarjeta de un campeon: fondo, nombre, circulo de colores y las
-  // cuatro estadisticas con barras. La tarjeta es interactiva para alternar su
-  // seleccion.
-  crearTarjetaCampeon(campeon, x, y, ancho, alto) {
-    // Identificador estable del campeon (usa id, o el nombre como respaldo).
+  // Construye el HTML de la tarjeta de un campeon: cabecera (nombre + circulo de
+  // colores), estadisticas con barras y habilidades como etiquetas.
+  plantillaTarjeta(campeon) {
     const id = this.idDe(campeon);
+    const nombre = this.escapar(campeon && campeon.nombre) || "Campeón";
+    const estad = (campeon && campeon.estadisticas) || {};
 
-    // Fondo de la tarjeta (origen en la esquina superior izquierda).
-    const fondo = this.add
-      .rectangle(x, y, ancho, alto, COLOR_TARJETA)
-      .setOrigin(0, 0)
-      .setStrokeStyle(2, COLOR_BORDE)
-      .setInteractive({ useHandCursor: true });
+    // Circulo dividido en dos mitades con el color principal y el secundario.
+    const principal = this.colorSeguro(campeon && campeon.colorPrincipal);
+    const secundario = this.colorSeguro(campeon && campeon.colorSecundario);
+    const estiloColores =
+      `background:linear-gradient(135deg, ${principal} 0%, ${principal} 50%, ` +
+      `${secundario} 50%, ${secundario} 100%)`;
 
-    // Nombre del campeon (truncado por el ancho disponible).
-    const nombre = this.add
-      .text(x + 14, y + 12, campeon.nombre || "Campeon", {
-        fontFamily: "sans-serif",
-        fontSize: "18px",
-        fontStyle: "bold",
-        color: COLOR_TEXTO,
-        wordWrap: { width: ancho - 70 },
-      })
-      .setOrigin(0, 0);
-
-    // Circulo partido en dos mitades con el color principal y el secundario
-    // (Requisito 11.3). Se usan graficos de Phaser con colores numericos.
-    const radio = 16;
-    const cx = x + ancho - 14 - radio;
-    const cy = y + 12 + radio;
-    const colores = this.add.graphics();
-    this.dibujarCirculoColores(
-      colores,
-      cx,
-      cy,
-      radio,
-      campeon.colorPrincipal,
-      campeon.colorSecundario
-    );
-
-    // Estadisticas: etiqueta en espanol, valor y barra normalizada al rango.
-    const objetosEstadisticas = [];
-    const estad = campeon.estadisticas || {};
-    let filaY = y + 58;
-    const anchoBarra = ancho - 28;
-    RANGOS_ESTADISTICAS.forEach((rango) => {
-      const valor = typeof estad[rango.clave] === "number" ? estad[rango.clave] : null;
+    // Estadisticas con barras, cada una escalada a su rango.
+    const estadisticasHtml = RANGOS_ESTADISTICAS.map((rango) => {
+      const valor = estad[rango.clave];
+      const numero = typeof valor === "number" ? valor : null;
       const porcentaje =
-        valor == null
+        numero == null
           ? 0
-          : Math.max(0, Math.min(1, (valor - rango.min) / (rango.max - rango.min)));
+          : Math.max(
+              0,
+              Math.min(
+                100,
+                ((numero - rango.min) / (rango.max - rango.min)) * 100
+              )
+            );
+      const textoValor = numero == null ? "-" : numero;
+      return (
+        `<div class="estadistica">` +
+        `<div class="estadistica-cabecera">` +
+        `<span>${rango.etiqueta}</span>` +
+        `<span class="estadistica-valor">${textoValor}</span>` +
+        `</div>` +
+        `<div class="barra"><div class="barra-relleno" style="width:${porcentaje}%"></div></div>` +
+        `</div>`
+      );
+    }).join("");
 
-      // Etiqueta "Vida" y valor numerico alineado a la derecha.
-      const etiqueta = this.add
-        .text(x + 14, filaY, rango.etiqueta, {
-          fontFamily: "sans-serif",
-          fontSize: "12px",
-          color: COLOR_TEXTO_TENUE,
-        })
-        .setOrigin(0, 0);
-      const textoValor = this.add
-        .text(x + ancho - 14, filaY, valor == null ? "-" : String(valor), {
-          fontFamily: "sans-serif",
-          fontSize: "12px",
-          color: COLOR_TEXTO,
-        })
-        .setOrigin(1, 0);
+    // Habilidades como etiquetas tipo "chip".
+    const habilidades = Array.isArray(campeon && campeon.habilidades)
+      ? campeon.habilidades
+      : [];
+    const habilidadesHtml = habilidades.length
+      ? habilidades
+          .map(
+            (h) => `<span class="habilidad-etiqueta">${this.escapar(h)}</span>`
+          )
+          .join("")
+      : `<span class="habilidad-etiqueta">Sin habilidades</span>`;
 
-      // Riel de la barra y su relleno proporcional al porcentaje.
-      const riel = this.add
-        .rectangle(x + 14, filaY + 18, anchoBarra, 6, COLOR_RIEL)
-        .setOrigin(0, 0)
-        .setStrokeStyle(1, COLOR_BORDE);
-      const relleno = this.add
-        .rectangle(x + 14, filaY + 18, Math.max(1, anchoBarra * porcentaje), 6, COLOR_RELLENO)
-        .setOrigin(0, 0);
-
-      objetosEstadisticas.push(etiqueta, textoValor, riel, relleno);
-      filaY += 30;
-    });
-
-    // Agrupa todos los objetos de la tarjeta en el contenedor de la lista.
-    this.contenedorLista.add([fondo, nombre, colores, ...objetosEstadisticas]);
-
-    // Guarda referencias para poder resaltar la tarjeta al seleccionarla.
-    this.tarjetasPorId.set(id, { fondo, campeon });
-
-    // Click en cualquier parte de la tarjeta alterna su seleccion.
-    fondo.on("pointerup", () => this.alternarSeleccion(id));
-
-    // Si este es el campeon recien creado, lo preselecciona y resalta.
-    if (this.campeonCreado && this.idDe(this.campeonCreado) === id) {
-      this.alternarSeleccion(id);
-    }
-  }
-
-  // Dibuja en `g` un circulo dividido en dos mitades verticales con el color
-  // principal (izquierda) y el secundario (derecha), mas un borde.
-  dibujarCirculoColores(g, cx, cy, radio, colorPrincipal, colorSecundario) {
-    const principal = this.colorAEntero(colorPrincipal);
-    const secundario = this.colorAEntero(colorSecundario);
-
-    // Mitad izquierda con el color principal.
-    g.fillStyle(principal, 1);
-    g.slice(cx, cy, radio, Phaser.Math.DegToRad(90), Phaser.Math.DegToRad(270), false);
-    g.fillPath();
-
-    // Mitad derecha con el color secundario.
-    g.fillStyle(secundario, 1);
-    g.slice(cx, cy, radio, Phaser.Math.DegToRad(270), Phaser.Math.DegToRad(90), false);
-    g.fillPath();
-
-    // Borde del circulo para separarlo del fondo.
-    g.lineStyle(2, COLOR_BORDE, 1);
-    g.strokeCircle(cx, cy, radio);
+    return (
+      `<li class="tarjeta-seleccion" data-id="${this.escapar(id)}" ` +
+      `role="button" aria-pressed="false" tabindex="0">` +
+      `<div class="seleccion-cabecera">` +
+      `<h2 class="seleccion-nombre">${nombre}</h2>` +
+      `<span class="seleccion-colores" role="img" ` +
+      `aria-label="Colores de ${nombre}" style="${estiloColores}"></span>` +
+      `</div>` +
+      `<div class="seleccion-estadisticas">${estadisticasHtml}</div>` +
+      `<div class="seleccion-habilidades">${habilidadesHtml}</div>` +
+      `</li>`
+    );
   }
 
   // Alterna la seleccion de un campeon respetando el maximo de dos distintos.
@@ -378,61 +280,51 @@ export default class SeleccionScene extends Phaser.Scene {
     // Refresca el resaltado de las tarjetas, la pista y el boton.
     this.actualizarResaltado();
     this.actualizarPista();
-    this.actualizarBotonConfirmar();
+    this.actualizarBoton();
   }
 
-  // Resalta las tarjetas seleccionadas con un borde destacado y las demas con
-  // el borde normal.
+  // Aplica/quita la clase "seleccionada" a cada tarjeta segun el estado actual.
   actualizarResaltado() {
-    this.tarjetasPorId.forEach((ref, id) => {
-      const seleccionado = this.seleccionados.includes(id);
-      ref.fondo.setStrokeStyle(
-        seleccionado ? 4 : 2,
-        seleccionado ? COLOR_BORDE_SELECCION : COLOR_BORDE
-      );
+    if (!this.lista) {
+      return;
+    }
+    const tarjetas = this.lista.querySelectorAll(".tarjeta-seleccion");
+    tarjetas.forEach((tarjeta) => {
+      const seleccionada = this.seleccionados.includes(tarjeta.dataset.id);
+      tarjeta.classList.toggle("seleccionada", seleccionada);
+      tarjeta.setAttribute("aria-pressed", seleccionada ? "true" : "false");
     });
   }
 
   // Actualiza el texto de la pista segun cuantos campeones faltan por elegir.
   // Admite un mensaje explicito opcional (p. ej. al intentar elegir un tercero).
   actualizarPista(mensajeExplicito) {
-    if (!this.textoPista) {
+    if (!this.pista) {
       return;
     }
     if (mensajeExplicito) {
-      this.textoPista.setText(mensajeExplicito);
+      this.pista.textContent = mensajeExplicito;
       return;
     }
     const faltan = 2 - this.seleccionados.length;
     if (this.campeones.length === 0) {
-      this.textoPista.setText("");
+      this.pista.textContent = "";
     } else if (faltan === 2) {
-      this.textoPista.setText("Selecciona dos campeones para pelear.");
+      this.pista.textContent = "Selecciona dos campeones para pelear.";
     } else if (faltan === 1) {
-      this.textoPista.setText("Selecciona un campeon mas.");
+      this.pista.textContent = "Selecciona un campeon mas.";
     } else {
-      this.textoPista.setText("Listo: pulsa Iniciar combate.");
+      this.pista.textContent = "Listo: pulsa Iniciar combate.";
     }
   }
 
   // Habilita el boton de confirmar solo cuando hay exactamente dos campeones
-  // distintos seleccionados; en caso contrario lo atenua y lo deshabilita.
-  actualizarBotonConfirmar() {
-    if (!this.botonConfirmar || !this.textoBotonConfirmar) {
+  // distintos seleccionados; en caso contrario lo deshabilita.
+  actualizarBoton() {
+    if (!this.boton) {
       return;
     }
-    const listo = this.seleccionados.length === 2;
-    if (listo) {
-      this.botonConfirmar.setFillStyle(COLOR_BORDE_SELECCION);
-      this.botonConfirmar.setAlpha(1);
-      this.textoBotonConfirmar.setAlpha(1);
-      this.botonConfirmar.setInteractive({ useHandCursor: true });
-    } else {
-      this.botonConfirmar.setFillStyle(COLOR_TARJETA);
-      this.botonConfirmar.setAlpha(0.6);
-      this.textoBotonConfirmar.setAlpha(0.6);
-      this.botonConfirmar.disableInteractive();
-    }
+    this.boton.disabled = this.seleccionados.length !== 2;
   }
 
   // Al confirmar: valida que haya dos campeones distintos y arranca ArenaScene
@@ -456,7 +348,10 @@ export default class SeleccionScene extends Phaser.Scene {
       return;
     }
 
-    // Inicia la arena con los dos campeones elegidos.
+    // Oculta el overlay e inicia la arena con los dos campeones elegidos.
+    if (this.overlay) {
+      this.overlay.classList.remove("visible");
+    }
     this.scene.start("ArenaScene", { campeonA, campeonB });
   }
 
@@ -476,33 +371,55 @@ export default class SeleccionScene extends Phaser.Scene {
     return this.campeones.find((campeon) => this.idDe(campeon) === id) || null;
   }
 
-  // Convierte un color "#rrggbb" a entero para Phaser; si no es valido devuelve
-  // un gris neutro, evitando inyectar valores arbitrarios (sanitizacion).
-  colorAEntero(color) {
-    if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color.trim())) {
-      return parseInt(color.trim().slice(1), 16);
-    }
-    // Gris neutro por defecto (equivale a #6b7280).
-    return 0x6b7280;
-  }
-
-  // Muestra el mensaje central (carga / vacio / error) y oculta la lista cuando
-  // corresponde. `esError` cambia el color a rojo.
+  // Muestra un mensaje de estado (carga / vacio / error) en espanol.
   mostrarMensaje(texto, esError) {
-    if (this.contenedorLista) {
-      this.contenedorLista.removeAll(true);
+    if (!this.mensaje) {
+      return;
     }
-    if (this.textoMensaje) {
-      this.textoMensaje.setText(texto);
-      this.textoMensaje.setColor(esError ? COLOR_ERROR : COLOR_TEXTO_TENUE);
-      this.textoMensaje.setVisible(true);
+    this.mensaje.textContent = texto;
+    this.mensaje.classList.toggle("error", Boolean(esError));
+  }
+
+  // Oculta (vacia) el mensaje de estado.
+  ocultarMensaje() {
+    if (this.mensaje) {
+      this.mensaje.textContent = "";
+      this.mensaje.classList.remove("error");
     }
   }
 
-  // Oculta el mensaje central (cuando se va a mostrar la lista de campeones).
-  ocultarMensaje() {
-    if (this.textoMensaje) {
-      this.textoMensaje.setVisible(false);
+  // Devuelve un color CSS seguro; si el valor no parece un color valido usa un
+  // gris neutro para evitar inyectar estilos arbitrarios.
+  colorSeguro(color) {
+    if (typeof color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(color.trim())) {
+      return color.trim();
     }
+    return "#6b7280";
+  }
+
+  // Escapa texto para interpolarlo de forma segura dentro de innerHTML.
+  escapar(valor) {
+    const texto = valor == null ? "" : String(valor);
+    return texto
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // Al apagar la escena: elimina los listeners y oculta el overlay para que no
+  // quede visible ni activo durante las demas escenas.
+  alApagar() {
+    if (this.boton && this.alIniciar) {
+      this.boton.removeEventListener("click", this.alIniciar);
+    }
+    if (this.lista && this.alClickLista) {
+      this.lista.removeEventListener("click", this.alClickLista);
+    }
+    if (this.overlay) {
+      this.overlay.classList.remove("visible");
+    }
+    this.alIniciar = null;
+    this.alClickLista = null;
   }
 }

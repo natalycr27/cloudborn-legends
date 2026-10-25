@@ -163,11 +163,39 @@ export default class ArenaScene extends Phaser.Scene {
     const semilla = Math.floor(Math.random() * 0xffffffff);
     this.estadoCombate = crearCombate(this.campeonA, this.campeonB, ARENA_POR_DEFECTO, semilla);
 
-    // Calcula como mapear la arena logica (800x600) al canvas real, centrada.
-    this.calcularEscalaArena();
-
     // Genera las texturas de particulas (puntos suaves) una sola vez.
     this.generarTexturasParticulas();
+
+    // Construye todo el layout visual (coliseo, sprites y HUD) para el tamano
+    // actual del canvas. Se extrae a un metodo propio para poder reconstruirlo
+    // cuando cambie el tamano/orientacion (giro del telefono).
+    this.construirLayout();
+
+    // Guarda la vida inicial para detectar impactos posteriores.
+    this.hpPrevio.A = this.estadoCombate.campeonA.hp;
+    this.hpPrevio.B = this.estadoCombate.campeonB.hp;
+
+    // Render inicial del estado (posiciones y barras de vida de partida).
+    this.renderizar();
+
+    // Reacomodo ante cambio de tamano/orientacion: cuando main.js ajusta el
+    // tamano base del juego (720x1280 <-> 800x600) o el navegador redimensiona
+    // la ventana, Phaser emite 'resize' en el ScaleManager. Reconstruimos el
+    // layout conservando el estado del combate para que la arena se reacomode
+    // sin reiniciar la pelea.
+    this.scale.on("resize", this.alRedimensionar, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.alApagar, this);
+  }
+
+  // Construye (o reconstruye) todo el contenido visual de la escena para el
+  // tamano actual del canvas: calcula la escala/offsets de la arena logica
+  // (800x600) sobre el canvas, dibuja el coliseo, crea la capa de efectos y
+  // genera los sprites de los campeones y el HUD superior. No toca el estado
+  // del combate, de modo que puede invocarse de nuevo al cambiar el tamano.
+  construirLayout() {
+    // Calcula como mapear la arena logica (800x600) al canvas real, centrada.
+    // El HUD va arriba y el coliseo ocupa el mayor espacio posible del ancho.
+    this.calcularEscalaArena();
 
     // Dibuja el coliseo (gradas, publico, piso, runas, antorchas, vineta).
     this.dibujarColiseo();
@@ -179,34 +207,83 @@ export default class ArenaScene extends Phaser.Scene {
     // Crea los sprites de los campeones y el HUD superior.
     this.crearSprites();
     this.crearHud();
+  }
 
-    // Guarda la vida inicial para detectar impactos posteriores.
-    this.hpPrevio.A = this.estadoCombate.campeonA.hp;
-    this.hpPrevio.B = this.estadoCombate.campeonB.hp;
+  // Manejador del evento 'resize' del ScaleManager. Destruye el contenido
+  // visual actual (dejando intacto el estado del combate) y reconstruye el
+  // layout para el nuevo tamano, de modo que al girar el telefono la arena se
+  // reacomode: el HUD arriba y el coliseo ocupando casi todo el ancho.
+  alRedimensionar() {
+    // Evita reconstruir si la escena ya no esta activa (p. ej. navegando fuera).
+    if (!this.scene || !this.scene.isActive() || !this.estadoCombate) {
+      return;
+    }
 
-    // Render inicial del estado (posiciones y barras de vida de partida).
+    // Detiene y elimina tweens y objetos de dibujo creados por el layout
+    // anterior para no acumular graficos ni animaciones huerfanas.
+    this.tweens.killAll();
+    this.children.removeAll(true);
+
+    // Reconstruye el coliseo, los sprites y el HUD para el tamano nuevo.
+    this.construirLayout();
+
+    // Vuelve a pintar el estado actual del combate con la nueva escala.
     this.renderizar();
+
+    // Si el combate ya habia terminado, re-muestra la pantalla final para que
+    // no desaparezca tras el reacomodo.
+    if (this.resultado !== null) {
+      this.pantallaFinalMostrada = false;
+      this.mostrarPantallaFinal();
+    }
+  }
+
+  // Limpieza al apagar la escena: desengancha el listener de 'resize' para no
+  // dejar manejadores colgados cuando se navega a otra escena.
+  alApagar() {
+    if (this.scale) {
+      this.scale.off("resize", this.alRedimensionar, this);
+    }
   }
 
   // -------------------------------------------------------------------------
   // Escala y conversion de coordenadas arena logica (800x600) -> pantalla
   // -------------------------------------------------------------------------
 
+  // Indica si el juego esta en orientacion vertical (canvas mas alto que ancho),
+  // caso prioritario porque el publico juega desde el celular tras escanear un
+  // QR. Determina el layout del HUD (dos filas arriba en vertical) y como se
+  // reparte el espacio para que el coliseo ocupe lo maximo posible.
+  esVertical() {
+    return this.scale.height > this.scale.width;
+  }
+
+  // Alto en pixeles que reserva el HUD en la parte superior. En vertical son dos
+  // filas (barras de vida en la primera, nombres + temporizador en la segunda),
+  // asi que ocupa mas alto; en horizontal basta con una franja.
+  altoHud() {
+    return this.esVertical() ? 132 : 88;
+  }
+
   // Calcula el factor de escala y los offsets para centrar la arena logica
   // (800x600) dentro del canvas real sin deformarla. Deja margen arriba para
-  // el HUD de barras de vida.
+  // el HUD de barras de vida. Todas las medidas salen de this.scale.width /
+  // this.scale.height, de modo que el coliseo ocupa el mayor espacio posible en
+  // ambas orientaciones.
   calcularEscalaArena() {
     const { width, height } = this.scale;
     const anchoLogico = ARENA_POR_DEFECTO.ancho;
     const altoLogico = ARENA_POR_DEFECTO.alto;
 
-    // Margen superior reservado para el HUD (barras grandes + temporizador).
-    const margenSuperior = 88;
+    // Margen superior reservado para el HUD (dos filas en vertical, una en
+    // horizontal) y un pequeno margen alrededor de la arena.
+    const margenSuperior = this.altoHud();
     const margen = 12;
     const anchoDisponible = width - margen * 2;
     const altoDisponible = height - margenSuperior - margen;
 
-    // Se usa el menor factor para que la arena entre completa y sin deformarse.
+    // Se usa el menor factor para que la arena entre completa y sin deformarse;
+    // asi ocupa todo el ancho en vertical y todo el alto disponible en horizontal.
     this.escala = Math.min(anchoDisponible / anchoLogico, altoDisponible / altoLogico);
 
     const anchoArena = anchoLogico * this.escala;
@@ -535,31 +612,51 @@ export default class ArenaScene extends Phaser.Scene {
 
   // Crea las barras de vida grandes (A a la izquierda, B a la derecha) con el
   // nombre y color de cada campeon, y el temporizador al centro.
+  //
+  // En vertical el HUD se organiza en dos filas arriba: la primera fila con las
+  // dos barras de vida (ocupando casi todo el ancho) y el temporizador al
+  // centro, y la segunda fila con los nombres. En horizontal mantiene el layout
+  // clasico (barras en las esquinas con el nombre debajo y el temporizador al
+  // centro). Todo se calcula a partir de this.scale para adaptarse al tamano.
   crearHud() {
+    const { width } = this.scale;
+    const vertical = this.esVertical();
+
     this.hud.A = this.crearBarraHud(this.estadoCombate.campeonA, "izquierda");
     this.hud.B = this.crearBarraHud(this.estadoCombate.campeonB, "derecha");
 
-    // Temporizador grande al centro, estilo marcador.
+    // Temporizador grande al centro, estilo marcador. En vertical baja a la
+    // segunda fila del HUD (entre los nombres); en horizontal va arriba al centro.
+    const yTemporizador = vertical ? 86 : 30;
     this.textoTemporizador = this.add
-      .text(this.scale.width / 2, 30, "90", {
+      .text(width / 2, yTemporizador, "90", {
         fontFamily: "Georgia, serif",
-        fontSize: "34px",
+        fontSize: vertical ? "30px" : "34px",
         fontStyle: "bold",
         color: COLOR_TEXTO,
         stroke: "#000000",
         strokeThickness: 4,
       })
       .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
       .setDepth(20);
   }
 
   // Crea una barra de vida grande en la esquina superior indicada. El relleno
   // de la barra A se vacia hacia la izquierda y el de la B hacia la derecha
   // (como en los juegos de pelea), de modo que ambos "bajan" hacia el centro.
+  // El ancho, la posicion y la fila del nombre se calculan a partir de
+  // this.scale para que el HUD quepa en ambas orientaciones.
   crearBarraHud(campeon, lado) {
     const { width } = this.scale;
-    const anchoBarra = Math.min(width * 0.4, 340);
-    const alto = 26;
+    const vertical = this.esVertical();
+
+    // En vertical las barras son mas anchas (dejando un hueco central para el
+    // temporizador) y los nombres bajan a una segunda fila comun del HUD.
+    const anchoBarra = vertical
+      ? Math.min(width * 0.44, 320)
+      : Math.min(width * 0.4, 340);
+    const alto = vertical ? 22 : 26;
     const margen = 16;
     const y = 24;
     const colorPrincipal = this.colorAEntero(campeon.colorPrincipal);
@@ -592,18 +689,23 @@ export default class ArenaScene extends Phaser.Scene {
       .setOrigin(lado === "izquierda" ? 0 : 1, 0)
       .setDepth(19);
 
+    // Segunda fila del HUD: nombres bajo las barras. En vertical se separan un
+    // poco mas para que no choquen con el temporizador central.
+    const yNombre = y + alto + 6;
+
     // Franja de color del campeon (identificador junto a su nombre).
     const franjaX = lado === "izquierda" ? x : x + anchoBarra - 10;
     this.add
-      .rectangle(franjaX, y + alto + 4, 10, 14, colorPrincipal)
+      .rectangle(franjaX, yNombre, 10, 14, colorPrincipal)
       .setOrigin(0, 0)
       .setDepth(19);
 
-    // Nombre del campeon bajo la barra, alineado hacia el centro.
+    // Nombre del campeon bajo la barra, alineado hacia el centro. En vertical se
+    // acorta el ancho de ajuste para que no se solape con el temporizador.
     const nombre = this.add
       .text(
         lado === "izquierda" ? x + 16 : x + anchoBarra - 16,
-        y + alto + 4,
+        yNombre,
         campeon.nombre || "Campeon",
         {
           fontFamily: "sans-serif",
@@ -612,9 +714,11 @@ export default class ArenaScene extends Phaser.Scene {
           color: COLOR_TEXTO,
           stroke: "#000000",
           strokeThickness: 3,
+          wordWrap: { width: anchoBarra - 20 },
         },
       )
       .setOrigin(lado === "izquierda" ? 0 : 1, 0)
+      .setResolution(this.resolucionTexto())
       .setDepth(19);
 
     return { marco, relleno, nombre, anchoBarra, lado };
@@ -778,6 +882,7 @@ export default class ArenaScene extends Phaser.Scene {
         strokeThickness: critico ? 5 : 3,
       })
       .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
       .setDepth(21);
 
     if (critico) {
@@ -1061,6 +1166,7 @@ export default class ArenaScene extends Phaser.Scene {
         strokeThickness: 5,
       })
       .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
       .setDepth(32)
       .setAlpha(0)
       .setScale(0.5);
@@ -1092,6 +1198,7 @@ export default class ArenaScene extends Phaser.Scene {
         wordWrap: { width: panelAncho - 40 },
       })
       .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
       .setDepth(32)
       .setAlpha(0);
     this.tweens.add({ targets: sub, alpha: 1, duration: 500, delay: 450 });
@@ -1108,6 +1215,7 @@ export default class ArenaScene extends Phaser.Scene {
         wordWrap: { width: panelAncho - 48 },
       })
       .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
       .setDepth(32)
       .setAlpha(0);
     this.tweens.add({ targets: this.textoNarracion, alpha: 1, duration: 500, delay: 650 });
@@ -1141,6 +1249,7 @@ export default class ArenaScene extends Phaser.Scene {
         strokeThickness: 3,
       })
       .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
       .setDepth(34)
       .setAlpha(0);
 
@@ -1503,6 +1612,19 @@ export default class ArenaScene extends Phaser.Scene {
     return m ? parseInt(m[1], 10) : null;
   }
 
+  // Resolucion de renderizado para los textos de Phaser. Al multiplicar por el
+  // devicePixelRatio de la pantalla (x2) los textos se rasterizan a mayor
+  // densidad, de modo que no se ven borrosos cuando el canvas se escala (sobre
+  // todo en celulares de alta densidad, que es el caso prioritario). Se acota
+  // para no disparar el uso de memoria en pantallas con DPR muy alto.
+  resolucionTexto() {
+    const dpr =
+      typeof window !== "undefined" && window.devicePixelRatio
+        ? window.devicePixelRatio
+        : 1;
+    return Math.min(4, dpr * 2);
+  }
+
   // Convierte un color "#rrggbb" a entero para Phaser; si no es valido devuelve
   // un gris neutro (sanitizacion), igual que en SeleccionScene.
   colorAEntero(color) {
@@ -1524,7 +1646,8 @@ export default class ArenaScene extends Phaser.Scene {
         align: "center",
         wordWrap: { width: width - 60 },
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5)
+      .setResolution(this.resolucionTexto());
 
     this.time.delayedCall(1500, () => {
       this.scene.start("SeleccionScene");

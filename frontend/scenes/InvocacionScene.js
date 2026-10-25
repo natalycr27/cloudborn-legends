@@ -97,17 +97,16 @@ export default class InvocacionScene extends Phaser.Scene {
       return;
     }
 
-    // Estado inicial: formulario visible, tarjeta oculta, mensaje limpio.
-    this.mostrarFormulario();
-    this.limpiarMensaje();
-    this.boton.disabled = false;
+    // Estado inicial: cada vez que se entra a la escena (incluido al volver
+    // desde "Volver a jugar" en RankingScene) el formulario arranca limpio:
+    // textarea vacio, contador en "0 / 500", sin mensajes, boton habilitado y
+    // tarjeta del campeon anterior oculta.
+    this.reiniciarFormulario();
 
     // Muestra el overlay por encima del canvas de Phaser.
     this.overlay.classList.add("visible");
 
-    // Enfoca el campo y actualiza el contador con el contenido actual (que
-    // puede conservarse de un intento anterior fallido).
-    this.actualizarContador();
+    // Enfoca el campo ya vacio para que el jugador escriba de inmediato.
     this.textarea.focus();
 
     // Contador en tiempo real: se actualiza en cada tecleo (Requisito 2.1).
@@ -373,18 +372,36 @@ export default class InvocacionScene extends Phaser.Scene {
     }
   }
 
-  // "Crear otro campeón": limpia el formulario y vuelve a mostrarlo.
-  crearOtroCampeon() {
+  // Deja el formulario de invocacion en su estado inicial: vacia el textarea,
+  // pone el contador en "0 / 500", borra cualquier mensaje de error o de carga,
+  // habilita el boton "Invocar" y oculta la tarjeta del campeon anterior.
+  // Se usa tanto al entrar a la escena (create) como en "Crear otro campeón".
+  reiniciarFormulario() {
+    // Olvida el campeon mostrado en la tarjeta anterior.
     this.campeonActual = null;
+
+    // Permite enviar de nuevo (por si se salio con una invocacion en curso).
+    this.generando = false;
+
+    // Vacia el textarea y refresca el contador a "0 / 500".
     if (this.textarea) {
       this.textarea.value = "";
     }
-    this.limpiarMensaje();
     this.actualizarContador();
-    this.mostrarFormulario();
+
+    // Borra mensajes de error/carga y vuelve a habilitar el boton.
+    this.limpiarMensaje();
     if (this.boton) {
       this.boton.disabled = false;
     }
+
+    // Muestra el formulario y oculta la tarjeta del campeon anterior.
+    this.mostrarFormulario();
+  }
+
+  // "Crear otro campeón": reinicia el formulario y devuelve el foco al textarea.
+  crearOtroCampeon() {
+    this.reiniciarFormulario();
     if (this.textarea) {
       this.textarea.focus();
     }

@@ -41,6 +41,86 @@ Globals:
 Resources:
 
   # -------------------------------------------------------------------------
+  # Bedrock Guardrail: protege la demo en vivo filtrando descripciones
+  # ofensivas del publico antes de generar el campeon. NO filtra VIOLENCE
+  # porque es un juego de combate y narrar peleas es parte normal del juego.
+  # -------------------------------------------------------------------------
+  CloudbornGuardrail:
+    Type: AWS::Bedrock::Guardrail
+    Properties:
+      Name: CloudbornGuardrail
+      Description: >
+        Guardrail de Cloudborn Legends: bloquea odio, insultos, contenido
+        sexual, mala conducta, ataques de prompt y groserias en las
+        descripciones de campeones.
+      # Mensaje mostrado cuando se bloquea la ENTRADA del usuario.
+      BlockedInputMessaging: "Tu descripción contiene contenido no permitido. Intenta con otra leyenda."
+      # Mensaje mostrado cuando se bloquea la SALIDA del modelo.
+      BlockedOutputsMessaging: "No se pudo generar este campeón. Intenta con otra descripción."
+      # Filtros de contenido por categoria (entrada INPUT y salida OUTPUT).
+      ContentPolicyConfig:
+        FiltersConfig:
+          # Odio, insultos y contenido sexual: maxima proteccion en ambos lados.
+          - Type: HATE
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: INSULTS
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          - Type: SEXUAL
+            InputStrength: HIGH
+            OutputStrength: HIGH
+          # Mala conducta: proteccion media en ambos lados.
+          - Type: MISCONDUCT
+            InputStrength: MEDIUM
+            OutputStrength: MEDIUM
+          # Ataque de prompt: solo aplica a la entrada del usuario; la salida
+          # del modelo no se evalua por esta categoria (NONE).
+          - Type: PROMPT_ATTACK
+            InputStrength: HIGH
+            OutputStrength: NONE
+          # Nota: VIOLENCE se omite a proposito (juego de combate).
+      # Filtro de palabras: lista administrada de groserias (PROFANITY) y una
+      # lista de palabras ofensivas comunes en Guatemala y Latinoamerica.
+      WordPolicyConfig:
+        ManagedWordListsConfig:
+          - Type: PROFANITY
+        WordsConfig:
+          - Text: hijueputa
+          - Text: hijo de puta
+          - Text: cerote
+          - Text: mierda
+          - Text: pendejo
+          - Text: pendeja
+          - Text: cabron
+          - Text: cabrona
+          - Text: puta
+          - Text: puto
+          - Text: verga
+          - Text: chingada
+          - Text: chingar
+          - Text: culero
+          - Text: culera
+          - Text: maricon
+          - Text: joto
+          - Text: coger
+          - Text: pajero
+          - Text: mamon
+          - Text: imbecil
+          - Text: idiota
+          - Text: estupido
+          - Text: estupida
+
+  # -------------------------------------------------------------------------
+  # Version publicada del Guardrail: las Lambdas aplican una version concreta.
+  # -------------------------------------------------------------------------
+  CloudbornGuardrailVersion:
+    Type: AWS::Bedrock::GuardrailVersion
+    Properties:
+      GuardrailIdentifier: !GetAtt CloudbornGuardrail.GuardrailId
+      Description: Version publicada del Guardrail de Cloudborn Legends.
+
+  # -------------------------------------------------------------------------
   # Tabla unica DynamoDB: almacena campeones y su conteo de victorias.
   # Clave de particion "PK" con formato "CAMPEON#<uuid>".
   # -------------------------------------------------------------------------
@@ -76,8 +156,8 @@ Resources:
       MethodSettings:
         - ResourcePath: '/*'
           HttpMethod: '*'
-          ThrottlingRateLimit: 5
-          ThrottlingBurstLimit: 10
+          ThrottlingRateLimit: 25
+          ThrottlingBurstLimit: 50
 
       # Respuestas de error propias de API Gateway (429, 403, 5xx) con CORS,
       # para que el navegador muestre el error real y no un error de CORS.
@@ -121,6 +201,12 @@ Resources:
                 Action:
                   - bedrock:InvokeModel
                 Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+              # Permiso para aplicar el Guardrail sobre las descripciones del
+              # usuario y la salida del modelo durante converse().
+              - Effect: Allow
+                Action:
+                  - bedrock:ApplyGuardrail
+                Resource: !GetAtt CloudbornGuardrail.GuardrailArn
 
   # -------------------------------------------------------------------------
   # Rol IAM minimo para listar_campeones: solo lectura (Scan) en DynamoDB.
@@ -234,6 +320,12 @@ Resources:
       Handler: crear_campeon.app.lambda_handler
       Timeout: 15
       Role: !GetAtt CrearCampeonRole.Arn
+      # Id y version del Guardrail que aplica converse() a la descripcion del
+      # usuario y a la salida del modelo (ademas de las variables globales).
+      Environment:
+        Variables:
+          GUARDRAIL_ID: !GetAtt CloudbornGuardrail.GuardrailId
+          GUARDRAIL_VERSION: !GetAtt CloudbornGuardrailVersion.Version
       Events:
         CrearCampeon:
           Type: Api
