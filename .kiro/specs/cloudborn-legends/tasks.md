@@ -170,7 +170,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - IMPORTANTE: en el campeón la habilidad se llama "area_de_dano" (así viene de la API); combat.js debe reconocer ese nombre. "area" solo se usa como tipo de evento.
     - _Requisitos: 6.1, 6.2, 6.3, 6.5_
 
-  - [ ] 7.2 Implementar `seleccionarHabilidad`, `actualizarTick` y `determinarGanador`
+  - [x] 7.2 Implementar `seleccionarHabilidad`, `actualizarTick` y `determinarGanador`
     - Implementar `seleccionarHabilidad(campeon, estado)` con la lógica de prioridad del diseño (curación si HP<50%, escudo si oponente ataca, proyectil/área a distancia, embestida cerca, ataque básico a 60px) y respeto de enfriamientos
     - Implementar `actualizarTick(estado, deltaTiempo)` que avanza movimiento, enfriamientos, selección y ejecución de habilidades, aplica daño, registra eventos y retorna `{ estado, eventos }`; la vida nunca baja de 0 ni sube del máximo
     - Implementar `determinarGanador(estado)` y `determinarGanadorPorVida(estado)` según el diseño
