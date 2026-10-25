@@ -1132,7 +1132,7 @@ export default class ArenaScene extends Phaser.Scene {
       .setInteractive({ useHandCursor: true });
 
     const etiqueta = this.add
-      .text(x, y, "Ver Salon de las Leyendas", {
+      .text(x, y, "Ver Salón de las Leyendas", {
         fontFamily: "sans-serif",
         fontSize: "17px",
         fontStyle: "bold",

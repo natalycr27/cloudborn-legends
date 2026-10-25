@@ -289,11 +289,152 @@
         background: #3a56ee;
       }
 
+      /* -----------------------------------------------------------------
+         Overlay HTML del Salón de las Leyendas (ranking).
+         Como el overlay de invocacion, va superpuesto al canvas de Phaser
+         (position:absolute, z-index superior). Al ser HTML + CSS garantiza:
+           - texto minimo de 16px en movil (Requisito 18.1),
+           - una sola columna en anchos < 768px y controles tactiles grandes
+             (Requisito 1.2),
+           - varias columnas en anchos >= 768px (Requisito 1.3),
+           - re-adaptacion al cambiar el ancho sin recargar, via media queries
+             (Requisito 1.5),
+           - sin scroll horizontal entre 320px y 1920px: el overlay nunca
+             supera el ancho visible y el texto largo se parte (Requisitos 1.6,
+             1.7, 18.3). El scroll vertical interno se permite si hay muchas
+             entradas, pero nunca horizontal.
+         ----------------------------------------------------------------- */
+      #overlay-ranking {
+        position: absolute;
+        z-index: 10; /* por encima del canvas de Phaser */
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        /* Ocupa casi todo el ancho en movil y se limita en pantallas grandes;
+           min(...) evita desbordes a 320px (Requisito 1.6). */
+        width: min(94%, 920px);
+        max-height: 92%;
+        display: none; /* oculto por defecto; RankingScene lo muestra */
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+        overflow-y: auto; /* scroll vertical si hay muchas entradas, nunca horizontal */
+        overflow-x: hidden;
+      }
+      /* Clase que RankingScene usa para mostrar el overlay. */
+      #overlay-ranking.visible {
+        display: flex;
+      }
+
+      #titulo-ranking {
+        margin: 0;
+        /* Tamano fluido: visible y completo sin recortes en cualquier ancho
+           (Requisitos 1.4, 1.7). */
+        font-size: clamp(22px, 6vw, 40px);
+        text-align: center;
+        line-height: 1.2;
+        word-break: break-word;
+      }
+
+      /* Mensajes de estado (carga / error / vacio) en espanol. */
+      #mensaje-ranking {
+        min-height: 20px;
+        font-size: 16px; /* minimo 16px en movil (Requisito 18.1) */
+        text-align: center;
+        color: #9fb0d8;
+      }
+      #mensaje-ranking.error {
+        color: #ff7a7a;
+      }
+
+      /* Rejilla del ranking. Por defecto (movil, < 768px) una sola columna
+         (Requisito 1.2). En pantallas grandes pasa a varias columnas mediante
+         media query (Requisito 1.3). */
+      #lista-ranking {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        grid-template-columns: 1fr; /* una sola columna en movil */
+        gap: 10px;
+      }
+      /* Cada entrada del ranking: puesto, colores, nombre y victorias. */
+      .entrada-ranking {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        min-height: 44px; /* area tactil comoda en movil (Requisito 18.2) */
+        border-radius: 10px;
+        background: #141a33;
+        border: 1px solid #3a4a7a;
+      }
+      /* Puesto en el ranking (1, 2, 3, ...). */
+      .entrada-puesto {
+        flex: 0 0 auto;
+        min-width: 32px;
+        font-size: 18px;
+        font-weight: 700;
+        color: #9fb0d8;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      /* Circulo dividido en dos mitades con los colores del campeon. */
+      .entrada-colores {
+        flex: 0 0 auto;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        border: 2px solid #0b1020;
+        box-shadow: 0 0 0 1px #3a4a7a;
+      }
+      /* Nombre del campeon: ocupa el espacio disponible y se parte si es largo
+         para no generar scroll horizontal (Requisitos 1.6, 1.7). */
+      .entrada-nombre {
+        flex: 1 1 auto;
+        min-width: 0;
+        font-size: 16px; /* minimo 16px en movil (Requisito 18.1) */
+        font-weight: 600;
+        color: #e8eefc;
+        word-break: break-word;
+      }
+      /* Numero de victorias, alineado a la derecha. */
+      .entrada-victorias {
+        flex: 0 0 auto;
+        font-size: 16px; /* minimo 16px en movil (Requisito 18.1) */
+        color: #ffd15a;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      /* Boton "Volver a jugar": area tactil minima de 44x44px en movil
+         (Requisito 18.2). */
+      #boton-volver-jugar {
+        align-self: center;
+        min-height: 44px;
+        padding: 12px 24px;
+        font-size: 16px;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        background: #4f6bff;
+        color: #ffffff;
+        cursor: pointer;
+      }
+      #boton-volver-jugar:hover {
+        background: #3a56ee;
+      }
+
       /* En pantallas grandes (>= 768px) el overlay puede ensancharse un poco
          mas; la responsividad detallada vive en las escenas (tarea 8.5). */
       @media (min-width: 768px) {
         #overlay-invocacion {
           width: min(70%, 560px);
+        }
+        /* Varias columnas en el ranking (Requisito 1.3): el ancho minimo de
+           columna reparte automaticamente 2-3 columnas segun el ancho. */
+        #lista-ranking {
+          grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
         }
       }
     </style>
@@ -344,6 +485,24 @@
             <button id="boton-ir-arena" type="button">Ir a la arena</button>
           </div>
         </div>
+      </div>
+
+      <!-- Overlay HTML del Salón de las Leyendas (controlado por RankingScene).
+           Igual que el overlay de invocación, el listado del ranking y el boton
+           "Volver a jugar" son elementos HTML superpuestos al canvas: asi el
+           texto puede garantizar un minimo real de 16px en movil y la rejilla
+           puede re-adaptarse (1 columna < 768px, varias >= 768px) con media
+           queries de CSS, sin recargar la pagina (Requisitos 1.2, 1.3, 1.5,
+           18.1). -->
+      <div id="overlay-ranking" aria-live="polite">
+        <h1 id="titulo-ranking">Salón de las Leyendas</h1>
+        <!-- Mensaje de estado (carga / error / vacio) en espanol. -->
+        <div id="mensaje-ranking"></div>
+        <!-- Rejilla del ranking: una sola columna en movil y varias columnas en
+             pantallas grandes (las columnas las fija el CSS responsivo). -->
+        <ol id="lista-ranking"></ol>
+        <!-- Boton para volver a la pantalla de invocacion y jugar de nuevo. -->
+        <button id="boton-volver-jugar" type="button">Volver a jugar</button>
       </div>
     </div>
 

@@ -254,9 +254,10 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - IMPORTANTE: POST /resultados recibe campeonA y campeonB como IDS (texto), pero POST /narraciones los recibe como OBJETOS completos del campeón (con nombre e id). Respetar esa diferencia.
     - _Requisitos: 7.1, 7.2, 7.3, 8.1, 8.2, 12.1_
 
-  - [ ] 8.5 Implementar `RankingScene` y responsividad global
+  - [x] 8.5 Implementar `RankingScene` y responsividad global
     - Crear `frontend/scenes/RankingScene.js` que llama a `GET /ranking` y muestra la lista del Salón de las Leyendas ordenada por victorias con texto mínimo de 16 px en móvil
     - Aplicar CSS responsivo: una sola columna y controles táctiles en anchos < 768 px; múltiples columnas en anchos ≥ 768 px; todos los elementos dentro de los límites visibles entre 320 px y 1920 px sin scroll horizontal; re-adaptación sin recarga al cambiar el ancho
+    - IMPORTANTE: corregir tilde en "Salón de las Leyendas" en todos los textos y agregar en el ranking un botón "Volver a jugar" que regrese a la pantalla de invocación.
     - _Requisitos: 1.2, 1.3, 1.5, 1.6, 1.7, 9.1, 13.1, 13.2, 13.3, 18.1, 18.3_
 
 - [ ] 9. Punto de control — frontend y combate completos
