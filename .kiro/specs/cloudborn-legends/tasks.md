@@ -205,7 +205,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Generar pares de campeones donde la velocidad de A > velocidad de B; verificar que la distancia recorrida por A en un tick es mayor que la de B bajo las mismas condiciones
 
 - [ ] 8. Frontend — escenas Phaser 3 y UI
-  - [ ] 8.1 Crear `frontend/index.html` y configurar Phaser 3
+  - [x] 8.1 Crear `frontend/index.html` y configurar Phaser 3
     - Crear `frontend/index.html` con el canvas de Phaser y los elementos HTML del overlay (textarea, botón, contador de caracteres)
     - Crear `frontend/src/main.js` que inicializa Phaser 3 con las 5 escenas registradas (`BootScene`, `InvocacionScene`, `SeleccionScene`, `ArenaScene`, `RankingScene`) y el canvas responsive
     - Leer `window.CONFIG.apiUrl` para las llamadas a la API; usar `http://localhost:3000` como valor por defecto si `window.CONFIG` no existe

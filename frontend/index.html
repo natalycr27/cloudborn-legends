@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- Viewport responsive: el juego debe adaptarse de 320px a 1920px sin scroll horizontal (Requisito 1.6) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Cloudborn Legends</title>
+    <link rel="icon" href="data:,">
+
+    <style>
+      /* Reset basico: sin margenes ni scroll horizontal en ningun ancho (Requisito 1.6) */
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow-x: hidden;
+        background: #0b1020;
+        color: #e8eefc;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      }
+
+      /* Contenedor del juego: centra el canvas de Phaser y sirve de ancla
+         para los elementos HTML superpuestos (overlay). */
+      #contenedor-juego {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* El canvas que Phaser inyecta se escala de forma responsive. */
+      #contenedor-juego canvas {
+        display: block;
+        max-width: 100%;
+        max-height: 100%;
+      }
+
+      /* -----------------------------------------------------------------
+         Overlay HTML de la pantalla de invocacion.
+         El campo de texto, el boton y el contador NO son objetos de Phaser:
+         son elementos HTML superpuestos sobre el canvas con position:absolute
+         y un z-index superior al canvas para que queden por encima y sean
+         accesibles (diseno de la UI del Frontend).
+         InvocacionScene (tarea 8.2) muestra y oculta este overlay.
+         ----------------------------------------------------------------- */
+      #overlay-invocacion {
+        position: absolute;
+        z-index: 10; /* por encima del canvas de Phaser */
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: min(90%, 520px);
+        display: none; /* oculto por defecto; InvocacionScene lo muestra */
+        flex-direction: column;
+        gap: 12px;
+        padding: 16px;
+      }
+      /* Clase que InvocacionScene usa para mostrar el overlay. */
+      #overlay-invocacion.visible {
+        display: flex;
+      }
+
+      #titulo-invocacion {
+        margin: 0;
+        /* Tamano fluido para que "Invoca tu leyenda" se vea completo y sin
+           recortes en cualquier ancho (Requisito 1.4). */
+        font-size: clamp(22px, 6vw, 40px);
+        text-align: center;
+        line-height: 1.2;
+        word-break: break-word;
+      }
+
+      #descripcion-campeon {
+        width: 100%;
+        min-height: 120px;
+        resize: vertical;
+        padding: 12px;
+        font-size: 16px; /* minimo 16px en movil (Requisito 18.1) */
+        border-radius: 8px;
+        border: 2px solid #3a4a7a;
+        background: #141a33;
+        color: #e8eefc;
+      }
+
+      /* Contador de caracteres en formato "X / 500" (Requisito 2.1). */
+      #contador-caracteres {
+        align-self: flex-end;
+        font-size: 14px;
+        color: #9fb0d8;
+      }
+
+      /* Boton de invocar: area tactil minima de 44x44px en movil (Requisito 18.2). */
+      #boton-invocar {
+        min-height: 44px;
+        padding: 12px 20px;
+        font-size: 16px;
+        font-weight: 600;
+        border: none;
+        border-radius: 8px;
+        background: #4f6bff;
+        color: #ffffff;
+        cursor: pointer;
+      }
+      #boton-invocar:hover {
+        background: #3a56ee;
+      }
+      #boton-invocar:disabled {
+        background: #2a335a;
+        cursor: not-allowed;
+      }
+
+      /* Mensajes de estado (carga / error) en espanol (Requisitos 2.2, 2.4, 2.5). */
+      #mensaje-invocacion {
+        min-height: 20px;
+        font-size: 14px;
+        text-align: center;
+      }
+      #mensaje-invocacion.error {
+        color: #ff7a7a;
+      }
+
+      /* En pantallas grandes (>= 768px) el overlay puede ensancharse un poco
+         mas; la responsividad detallada vive en las escenas (tarea 8.5). */
+      @media (min-width: 768px) {
+        #overlay-invocacion {
+          width: min(70%, 560px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Contenedor donde Phaser monta el canvas del juego. -->
+    <div id="contenedor-juego">
+      <!-- Overlay HTML de la pantalla de invocacion (controlado por InvocacionScene). -->
+      <div id="overlay-invocacion">
+        <h1 id="titulo-invocacion">Invoca tu leyenda</h1>
+        <textarea
+          id="descripcion-campeon"
+          minlength="10"
+          maxlength="500"
+          placeholder="Describe tu campeon (entre 10 y 500 caracteres)..."
+          aria-label="Descripcion del campeon"
+        ></textarea>
+        <div id="contador-caracteres">0 / 500</div>
+        <button id="boton-invocar" type="button">Invocar</button>
+        <div id="mensaje-invocacion"></div>
+      </div>
+    </div>
+
+    <!-- Configuracion generada en despliegue (gitignored). Define window.CONFIG.apiUrl.
+         Si no existe (desarrollo local), main.js usa http://localhost:3000 por defecto.
+         El atributo onerror evita que un 404 rompa la carga en local. -->
+    <script src="config.js" onerror="window.__sinConfig = true"></script>
+
+    <!-- Phaser 3 desde CDN: apropiado y simple para un sitio estatico en S3/CloudFront. -->
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+
+    <!-- Punto de entrada del juego como modulo ES (permite importar combat.js y las escenas). -->
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

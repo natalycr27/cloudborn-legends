@@ -323,6 +323,18 @@
         "chatSessionId": "sess_c69113e8-f260-4e26-8f79-7dc3128bf2e8",
         "timestamp": 1792951121142
       }
+    ],
+    "8.1 Crear `frontend/index.html` y configurar Phaser 3": [
+      {
+        "executionId": "7369a490-85ed-4c7e-9194-c415185f293c",
+        "chatSessionId": "sess_75fae08a-7cbb-457b-82db-2c3306a56a46",
+        "timestamp": 1792951938639
+      },
+      {
+        "executionId": "7369a490-85ed-4c7e-9194-c415185f293c",
+        "chatSessionId": "sess_75fae08a-7cbb-457b-82db-2c3306a56a46",
+        "timestamp": 1792952160875
+      }
     ]
   }
 }
