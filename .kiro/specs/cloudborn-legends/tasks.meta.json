@@ -438,6 +438,13 @@
         "chatSessionId": "sess_f5c0cd01-6364-48fa-8df4-3063b4977b10",
         "timestamp": 1792960166802
       }
+    ],
+    "11.1 Crear el script de despliegue `deploy.ps1` (Windows) y `deploy.sh` (Unix)": [
+      {
+        "executionId": "d1416fb4-4e42-4836-99cd-670f1fe966c1",
+        "chatSessionId": "sess_74ce39a3-0bd4-4bfa-81b2-05d70ec2c110",
+        "timestamp": 1792960493479
+      }
     ]
   }
 }

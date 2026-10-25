@@ -414,3 +414,13 @@ Outputs:
   CloudFrontUrl:
     Description: URL de la distribucion CloudFront del frontend.
     Value: !Sub 'https://${CloudFrontDistribution.DomainName}'
+
+  # Nombre del bucket S3 del frontend; el script de despliegue lo usa en "aws s3 sync".
+  FrontendBucketName:
+    Description: Nombre del bucket S3 que aloja los archivos estaticos del frontend.
+    Value: !Ref FrontendBucket
+
+  # Id de la distribucion CloudFront; el script lo usa para invalidar la cache.
+  CloudFrontDistributionId:
+    Description: Id de la distribucion CloudFront del frontend.
+    Value: !Ref CloudFrontDistribution

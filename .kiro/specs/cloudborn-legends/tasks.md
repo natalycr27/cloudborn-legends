@@ -278,12 +278,14 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - _Requisitos: 7.1, 7.2, 7.6_
 
 - [ ] 11. Script de despliegue y configuración final
-  - [ ] 11.1 Crear el script de despliegue `deploy.ps1` (Windows) y `deploy.sh` (Unix)
+  - [x] 11.1 Crear el script de despliegue `deploy.ps1` (Windows) y `deploy.sh` (Unix)
     - Ejecutar `sam build` y `sam deploy`
     - Leer el output `ApiUrl` con `aws cloudformation describe-stacks --query Outputs`
     - Generar `frontend/config.js` con el contenido `window.CONFIG = { apiUrl: "<ApiUrl>" };`
     - Subir todos los archivos estáticos del frontend al bucket S3 con `aws s3 sync`
     - Invalidar la caché de CloudFront con `aws cloudfront create-invalidation`
+    - IMPORTANTE: en aws s3 sync excluir node_modules/*, *.test.js, package.json, package-lock.json y vitest.config.js; solo deben subirse index.html, config.js, src/, scenes/ y assets/.
+    - IMPORTANTE: el script solo para Windows (deploy.ps1) es suficiente; usar el stack "cloudborn-legends" en us-east-1.
     - _Requisitos: 17.1_
 
   - [ ]* 11.2 Escribir smoke tests de configuración SAM
