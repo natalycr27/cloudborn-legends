@@ -163,16 +163,19 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
   - Verificar que todos los tests pasan con `pytest backend/ -v`. Consultar al usuario si surge alguna duda.
 
 - [ ] 7. Módulo `combat.js` — lógica de combate pura
-  - [ ] 7.1 Implementar las funciones base del módulo `combat.js`
+  - [x] 7.1 Implementar las funciones base del módulo `combat.js`
     - Crear `frontend/src/combat.js` como módulo ES; implementar `crearCombate(campeonA, campeonB, configArena, semilla)` que inicializa el `EstadoCombate` completo (posiciones, HP, enfriamientos, escudoActivo, rng con semilla, tiempoTranscurrido, duracionMaxima=90, eventos=[])
     - Implementar `moverCampeon(campeon, objetivo, deltaTiempo)` que mueve en dirección normalizada a velocidad `estadisticas.velocidad` px/s y limita a la arena
     - Implementar `calcularDano(atacante, defensor, habilidad)` con la tabla de multiplicadores (proyectil×1.0, embestida×1.5, área×0.8), reducción por armadura y reducción 50% si escudoActivo
+    - IMPORTANTE: en el campeón la habilidad se llama "area_de_dano" (así viene de la API); combat.js debe reconocer ese nombre. "area" solo se usa como tipo de evento.
     - _Requisitos: 6.1, 6.2, 6.3, 6.5_
 
   - [ ] 7.2 Implementar `seleccionarHabilidad`, `actualizarTick` y `determinarGanador`
     - Implementar `seleccionarHabilidad(campeon, estado)` con la lógica de prioridad del diseño (curación si HP<50%, escudo si oponente ataca, proyectil/área a distancia, embestida cerca, ataque básico a 60px) y respeto de enfriamientos
     - Implementar `actualizarTick(estado, deltaTiempo)` que avanza movimiento, enfriamientos, selección y ejecución de habilidades, aplica daño, registra eventos y retorna `{ estado, eventos }`; la vida nunca baja de 0 ni sube del máximo
     - Implementar `determinarGanador(estado)` y `determinarGanadorPorVida(estado)` según el diseño
+    - IMPORTANTE: el campeón debe dejar de moverse cuando ya está dentro del rango de la habilidad que va a usar (ej. 60px para ataque básico); nunca debe encimarse sobre el oponente (distancia 0).
+    - IMPORTANTE: la duración del escudo (3 s) y todos los enfriamientos se manejan en segundos usando deltaTiempo, no en turnos.
     - _Requisitos: 6.2, 6.3, 6.4, 6.6, 6.7, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
   - [ ] 7.3 Implementar `simularCombate` y exportar la interfaz pública del módulo
