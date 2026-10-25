@@ -48,6 +48,7 @@ import {
   ARENA_POR_DEFECTO,
   PASO_FIJO,
 } from "../src/combat.js";
+import { API_URL } from "../src/main.js";
 
 // Paleta reutilizada (coincide con index.html / las demas escenas).
 const COLOR_FONDO = "#0b1020";
@@ -114,6 +115,17 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Bandera para no lanzar la pantalla final mas de una vez.
     this.pantallaFinalMostrada = false;
+
+    // Bandera para ejecutar el flujo de fin de combate (registro de resultado,
+    // narracion y navegacion) una sola vez (tarea 8.4c).
+    this.finProcesado = false;
+
+    // Referencia al texto de narracion de la pantalla final (se rellena cuando
+    // /narraciones responde) y al boton para continuar al ranking.
+    this.textoNarracion = null;
+
+    // Bandera para navegar al ranking una sola vez (boton manual + automatico).
+    this.navegacionIniciada = false;
   }
 
   // Lee los datos entrantes de SeleccionScene antes de create().
@@ -131,6 +143,9 @@ export default class ArenaScene extends Phaser.Scene {
     this.hud = { A: null, B: null };
     this.hpPrevio = { A: null, B: null };
     this.pantallaFinalMostrada = false;
+    this.finProcesado = false;
+    this.textoNarracion = null;
+    this.navegacionIniciada = false;
   }
 
   // Inicializa el combate, calcula la escala de la arena y dibuja la escena base.
@@ -936,13 +951,33 @@ export default class ArenaScene extends Phaser.Scene {
   evaluarFinCombate() {
     const estado = this.estadoCombate;
 
+    // Fin por vida en cero: combat.js NO emite un evento 'muerte', asi que lo
+    // sintetizamos aqui y lo anadimos al historial de narracion para que el
+    // filtro de prioridad (tarea 8.4c) pueda incluirlo como evento clave.
     if (estado.campeonA.hp <= 0 || estado.campeonB.hp <= 0) {
       const desenlace = determinarGanador(estado);
+      const caido = estado.campeonA.hp <= 0 ? estado.campeonA : estado.campeonB;
+      this.eventosNarracion.push({
+        tipo: "muerte",
+        campeon: caido.id,
+        objetivo: null,
+        detalle: `${caido.nombre || "Un campeon"} cae derrotado`,
+      });
       this.fijarResultado(desenlace.resultado, desenlace.idGanador);
       return;
     }
 
+    // Fin por tiempo agotado (90 s): combat.js tampoco emite 'tiempo_agotado',
+    // asi que tambien lo sintetizamos para el narrador y resolvemos por el mayor
+    // porcentaje de vida restante.
     if (estado.tiempoTranscurrido >= estado.duracionMaxima) {
+      this.eventosNarracion.push({
+        tipo: "tiempo_agotado",
+        campeon: null,
+        objetivo: null,
+        detalle: "se agota el tiempo del combate",
+      });
+
       const porcentajeA = estado.campeonA.hp / estado.campeonA.vidaMaxima;
       const porcentajeB = estado.campeonB.hp / estado.campeonB.vidaMaxima;
       if (porcentajeA > porcentajeB) {
@@ -963,6 +998,11 @@ export default class ArenaScene extends Phaser.Scene {
     this.resultado = resultado;
     this.idGanador = idGanador;
     this.mostrarPantallaFinal();
+
+    // Lanza el flujo de fin de combate (registro de resultado, narracion y
+    // navegacion al ranking) una sola vez. Es asincrono y tolerante a fallos
+    // de red: pase lo que pase, la escena termina navegando a RankingScene.
+    this.procesarFinCombate();
   }
 
   // Indica si el combate ya tiene un resultado definido (ha terminado).
@@ -988,11 +1028,15 @@ export default class ArenaScene extends Phaser.Scene {
       .setDepth(30);
     this.tweens.add({ targets: velo, fillAlpha: 0.65, duration: 500 });
 
-    // Panel central con fondo para sostener el texto (no queda sin fondo).
-    const panelAncho = Math.min(width - 40, 520);
-    const panelAlto = 160;
+    // Panel central con fondo para sostener el texto (no queda sin fondo). Es
+    // mas alto que antes porque ademas del resultado alberga la narracion de la
+    // batalla (tarea 8.4c) y el boton para continuar al ranking.
+    const panelAncho = Math.min(width - 40, 560);
+    const panelAlto = Math.min(height - 40, 360);
+    const centroPanelY = height / 2;
+    const bordePanelSuperior = centroPanelY - panelAlto / 2;
     const panel = this.add
-      .rectangle(width / 2, height / 2, panelAncho, panelAlto, 0x11162b, 0.95)
+      .rectangle(width / 2, centroPanelY, panelAncho, panelAlto, 0x11162b, 0.95)
       .setStrokeStyle(3, 0xffd15a)
       .setDepth(31)
       .setScale(0.6)
@@ -1008,9 +1052,9 @@ export default class ArenaScene extends Phaser.Scene {
     // Titulo: "¡VICTORIA!" o "¡EMPATE!".
     const esEmpate = this.resultado !== "ganador";
     const titulo = this.add
-      .text(width / 2, height / 2 - 34, esEmpate ? "¡EMPATE!" : "¡VICTORIA!", {
+      .text(width / 2, bordePanelSuperior + 42, esEmpate ? "¡EMPATE!" : "¡VICTORIA!", {
         fontFamily: "Georgia, serif",
-        fontSize: "44px",
+        fontSize: "40px",
         fontStyle: "bold",
         color: esEmpate ? "#ffd15a" : "#5ad17a",
         stroke: "#000000",
@@ -1037,9 +1081,9 @@ export default class ArenaScene extends Phaser.Scene {
       subtexto = `Gana ${nombre}`;
     }
     const sub = this.add
-      .text(width / 2, height / 2 + 28, subtexto, {
+      .text(width / 2, bordePanelSuperior + 82, subtexto, {
         fontFamily: "sans-serif",
-        fontSize: "22px",
+        fontSize: "20px",
         fontStyle: "bold",
         color: COLOR_TEXTO,
         stroke: "#000000",
@@ -1051,6 +1095,279 @@ export default class ArenaScene extends Phaser.Scene {
       .setDepth(32)
       .setAlpha(0);
     this.tweens.add({ targets: sub, alpha: 1, duration: 500, delay: 450 });
+
+    // Texto de narracion: arranca con un mensaje de "generando..." y se
+    // reemplaza cuando /narraciones responde (o con un aviso si falla la red).
+    this.textoNarracion = this.add
+      .text(width / 2, centroPanelY + 24, "Narrando la batalla en la nube...", {
+        fontFamily: "sans-serif",
+        fontSize: "16px",
+        color: COLOR_TEXTO_TENUE,
+        align: "center",
+        lineSpacing: 4,
+        wordWrap: { width: panelAncho - 48 },
+      })
+      .setOrigin(0.5)
+      .setDepth(32)
+      .setAlpha(0);
+    this.tweens.add({ targets: this.textoNarracion, alpha: 1, duration: 500, delay: 650 });
+
+    // Boton para continuar manualmente al ranking (ademas de la navegacion
+    // automatica que dispara procesarFinCombate al terminar el flujo).
+    this.crearBotonRanking(width / 2, bordePanelSuperior + panelAlto - 32, panelAncho);
+  }
+
+  // Crea un boton "Ver Salon de las Leyendas" dentro de la pantalla final que
+  // navega a RankingScene al pulsarlo. La navegacion tambien ocurre de forma
+  // automatica al completar el flujo de fin de combate.
+  crearBotonRanking(x, y, panelAncho) {
+    const anchoBoton = Math.min(panelAncho - 60, 280);
+    const altoBoton = 44;
+
+    const fondo = this.add
+      .rectangle(x, y, anchoBoton, altoBoton, 0x4f6bff, 0.95)
+      .setStrokeStyle(2, 0xffd15a)
+      .setDepth(33)
+      .setAlpha(0)
+      .setInteractive({ useHandCursor: true });
+
+    const etiqueta = this.add
+      .text(x, y, "Ver Salon de las Leyendas", {
+        fontFamily: "sans-serif",
+        fontSize: "17px",
+        fontStyle: "bold",
+        color: COLOR_TEXTO,
+        stroke: "#000000",
+        strokeThickness: 3,
+      })
+      .setOrigin(0.5)
+      .setDepth(34)
+      .setAlpha(0);
+
+    this.tweens.add({ targets: [fondo, etiqueta], alpha: 1, duration: 400, delay: 800 });
+
+    // Al pulsar, navega inmediatamente al ranking.
+    fondo.on("pointerup", () => this.irAlRanking());
+  }
+
+  // -------------------------------------------------------------------------
+  // Flujo de fin de combate (tarea 8.4c): resultado, narracion y navegacion
+  // -------------------------------------------------------------------------
+
+  // Orquesta el cierre del combate una sola vez: registra el resultado,
+  // selecciona los eventos relevantes, pide la narracion y navega al ranking.
+  // Todo el flujo es tolerante a fallos de red: si cualquier llamada falla, se
+  // muestra una indicacion y la escena navega igualmente a RankingScene
+  // (Requisito 17.4), sin cerrar la aplicacion.
+  async procesarFinCombate() {
+    // Protege contra reentradas (solo se ejecuta una vez por combate).
+    if (this.finProcesado) {
+      return;
+    }
+    this.finProcesado = true;
+
+    // 1. Registrar el resultado (ids como texto) en POST /resultados.
+    await this.registrarResultado();
+
+    // 2. Seleccionar hasta 15 eventos relevantes y pedir la narracion.
+    const eventos = this.seleccionarEventosRelevantes(this.eventosNarracion, 15);
+    const narracion = await this.obtenerNarracion(eventos);
+
+    // 3. Mostrar la narracion devuelta (o la de respaldo) en la pantalla final.
+    this.mostrarNarracion(narracion);
+
+    // 4. Navegar al ranking tras una breve pausa para que el jugador lea el
+    //    resultado y la narracion (la navegacion es idempotente).
+    this.time.delayedCall(6000, () => this.irAlRanking());
+  }
+
+  // Llama a POST /resultados con el resultado del combate. El contrato de este
+  // endpoint recibe campeonA y campeonB como IDS (texto), mas el resultado y,
+  // cuando hay ganador, el idGanador. Un empate no envia idGanador. Los errores
+  // de red o HTTP no detienen el flujo: se registran y se continua.
+  async registrarResultado() {
+    // Cuerpo con los IDS de ambos campeones (texto), no los objetos completos.
+    const cuerpo = {
+      campeonA: this.campeonA ? this.campeonA.id : null,
+      campeonB: this.campeonB ? this.campeonB.id : null,
+      resultado: this.resultado,
+    };
+    // Solo se adjunta idGanador cuando hay un ganador declarado.
+    if (this.resultado === "ganador" && this.idGanador != null) {
+      cuerpo.idGanador = this.idGanador;
+    }
+
+    try {
+      const respuesta = await fetch(`${API_URL}/resultados`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+      // Un no-2xx no es fatal para el jugador: se registra y se continua.
+      if (!respuesta.ok) {
+        console.warn(`POST /resultados respondio ${respuesta.status}`);
+      }
+    } catch (error) {
+      // Error de red: no cerrar la app; el flujo continua hacia la narracion.
+      console.warn("No se pudo registrar el resultado:", error);
+    }
+  }
+
+  // Selecciona hasta 'maximo' eventos relevantes de la lista completa del
+  // combate, manteniendo el ORDEN CRONOLOGICO y priorizando por tipo cuando hay
+  // mas de 'maximo'. Prioridad (de mayor a menor): muerte -> tiempo_agotado ->
+  // habilidades especiales (embestida/escudo/curacion/area) -> proyectiles ->
+  // golpes con dano > 80. Los eventos no relevantes (p. ej. ataques basicos con
+  // dano <= 80) se descartan. Si hay menos relevantes que 'maximo', se envian
+  // todos. Devuelve los eventos elegidos en su orden cronologico original.
+  seleccionarEventosRelevantes(eventos, maximo) {
+    const lista = Array.isArray(eventos) ? eventos : [];
+
+    // Anota cada evento relevante con su indice original (para reordenar al
+    // final de forma cronologica) y su prioridad (numerica, menor = mas alta).
+    const anotados = [];
+    lista.forEach((ev, indice) => {
+      const prioridad = this.prioridadEvento(ev);
+      if (prioridad !== null) {
+        anotados.push({ ev, indice, prioridad });
+      }
+    });
+
+    // Si caben todos los relevantes, se devuelven en orden cronologico.
+    if (anotados.length <= maximo) {
+      return anotados
+        .sort((a, b) => a.indice - b.indice)
+        .map((item) => item.ev);
+    }
+
+    // Hay mas relevantes que el maximo: se ordena por prioridad (desc) y, a
+    // igualdad de prioridad, por orden cronologico; se toman los 'maximo'
+    // primeros y luego se restablece el orden cronologico para el narrador.
+    return anotados
+      .sort((a, b) => {
+        if (a.prioridad !== b.prioridad) {
+          return a.prioridad - b.prioridad;
+        }
+        return a.indice - b.indice;
+      })
+      .slice(0, maximo)
+      .sort((a, b) => a.indice - b.indice)
+      .map((item) => item.ev);
+  }
+
+  // Devuelve la prioridad numerica de un evento (0 = maxima) o null si el evento
+  // no es relevante para la narracion. El orden sigue el diseño:
+  //   0 muerte, 1 tiempo_agotado, 2 habilidades especiales, 3 proyectil,
+  //   4 golpe con dano > 80. Un ataque basico con dano <= 80 no es relevante.
+  prioridadEvento(ev) {
+    if (!ev || typeof ev.tipo !== "string") {
+      return null;
+    }
+    switch (ev.tipo) {
+      case "muerte":
+        return 0;
+      case "tiempo_agotado":
+        return 1;
+      case "embestida":
+      case "escudo":
+      case "curacion":
+      case "area":
+        return 2;
+      case "ataque": {
+        // El proyectil se distingue por el inicio de su detalle (igual que en
+        // los efectos visuales). Tiene mayor prioridad que un golpe fuerte.
+        if (typeof ev.detalle === "string" && ev.detalle.startsWith("proyectil")) {
+          return 3;
+        }
+        // Golpe mayor: ataque basico con dano > 80.
+        const dano = this.extraerDano(ev.detalle);
+        if (dano != null && dano > 80) {
+          return 4;
+        }
+        return null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  // Llama a POST /narraciones con los datos de la batalla y los eventos ya
+  // filtrados. El contrato de este endpoint recibe campeonA y campeonB como
+  // OBJETOS completos del campeon (con nombre e id), mas resultado, idGanador
+  // (si aplica) y eventos. Devuelve el texto de narracion a mostrar. Si la red
+  // falla, devuelve un mensaje de respaldo local para no cerrar la app.
+  async obtenerNarracion(eventos) {
+    // Cuerpo con los OBJETOS completos de ambos campeones (no solo sus ids).
+    const cuerpo = {
+      campeonA: this.campeonA,
+      campeonB: this.campeonB,
+      resultado: this.resultado,
+      eventos,
+    };
+    if (this.resultado === "ganador" && this.idGanador != null) {
+      cuerpo.idGanador = this.idGanador;
+    }
+
+    try {
+      const respuesta = await fetch(`${API_URL}/narraciones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cuerpo),
+      });
+
+      // La narracion siempre deberia responder 200 (con respaldo del backend),
+      // pero cubrimos un no-2xx igualmente devolviendo un texto local.
+      if (!respuesta.ok) {
+        console.warn(`POST /narraciones respondio ${respuesta.status}`);
+        return this.narracionLocalDeRespaldo();
+      }
+
+      const datos = await respuesta.json();
+      // La respuesta tiene la forma { narracion, usadoRespaldo }. Se muestra el
+      // texto venga del modelo o del respaldo del backend (usadoRespaldo true).
+      if (datos && typeof datos.narracion === "string" && datos.narracion.trim()) {
+        return datos.narracion.trim();
+      }
+      return this.narracionLocalDeRespaldo();
+    } catch (error) {
+      // Error de red: narracion de respaldo local; el flujo continua al ranking.
+      console.warn("No se pudo obtener la narracion:", error);
+      return this.narracionLocalDeRespaldo();
+    }
+  }
+
+  // Construye una narracion de respaldo local (solo para fallos de red del
+  // frontend, ya que el backend siempre devuelve 200 con su propio respaldo).
+  narracionLocalDeRespaldo() {
+    const nombreA = this.campeonA && this.campeonA.nombre ? this.campeonA.nombre : "Campeon A";
+    const nombreB = this.campeonB && this.campeonB.nombre ? this.campeonB.nombre : "Campeon B";
+    if (this.resultado === "empate") {
+      return `La batalla entre ${nombreA} y ${nombreB} termino en empate tras una lucha memorable.`;
+    }
+    const ganador = this.campeonPorId(this.idGanador);
+    const nombreGanador = ganador && ganador.nombre ? ganador.nombre : "El vencedor";
+    return `La batalla entre ${nombreA} y ${nombreB} ha terminado. ${nombreGanador} se alzo con la victoria.`;
+  }
+
+  // Muestra el texto de narracion en la pantalla final, reemplazando el mensaje
+  // de "generando...". Si el texto de narracion aun no existe (caso extremo),
+  // no hace nada.
+  mostrarNarracion(texto) {
+    if (!this.textoNarracion || !this.textoNarracion.active) {
+      return;
+    }
+    this.textoNarracion.setColor(COLOR_TEXTO);
+    this.textoNarracion.setText(texto || this.narracionLocalDeRespaldo());
+  }
+
+  // Navega a RankingScene de forma idempotente (solo una vez). Se usa tanto por
+  // la navegacion automatica tras la narracion como por el boton manual.
+  irAlRanking() {
+    if (this.navegacionIniciada) {
+      return;
+    }
+    this.navegacionIniciada = true;
+    this.scene.start("RankingScene");
   }
 
   // -------------------------------------------------------------------------

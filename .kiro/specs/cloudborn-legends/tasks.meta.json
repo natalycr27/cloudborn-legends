@@ -383,6 +383,18 @@
         "chatSessionId": "sess_64c3fcb2-f928-48f1-b318-a604aabb6f9f",
         "timestamp": 1792955345192
       }
+    ],
+    "8.4c Implementar el fin de combate: registro de resultado, narración y navegación en `ArenaScene`": [
+      {
+        "executionId": "0fad81bd-43d1-4b97-87a5-826081ba4962",
+        "chatSessionId": "sess_57e2c9f2-a20b-4daf-9d1c-95592131c728",
+        "timestamp": 1792956317026
+      },
+      {
+        "executionId": "0fad81bd-43d1-4b97-87a5-826081ba4962",
+        "chatSessionId": "sess_57e2c9f2-a20b-4daf-9d1c-95592131c728",
+        "timestamp": 1792956646327
+      }
     ]
   }
 }

@@ -246,11 +246,12 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Pantalla final: oscurecer el fondo, mostrar "¡VICTORIA!" y el nombre del ganador (o "¡EMPATE!") con animación de entrada, sin tapar nada sin fondo.
     - _Requisitos: 6.2, 6.3_
 
-  - [ ] 8.4c Implementar el fin de combate: registro de resultado, narración y navegación en `ArenaScene`
+  - [x] 8.4c Implementar el fin de combate: registro de resultado, narración y navegación en `ArenaScene`
     - Al terminar el combate, llamar a `POST /resultados` con el resultado (ganador o empate) y los ids de los dos campeones
     - Filtrar y priorizar los eventos del combate para seleccionar máximo 15 eventos relevantes (muerte → tiempo_agotado → habilidades especiales → proyectiles → golpes > 80) antes de enviar a la narración
     - Llamar a `POST /narraciones` con los datos de la batalla y los máximo 15 eventos; mostrar la narración devuelta (o la de respaldo si `usadoRespaldo: true`)
     - Navegar a `RankingScene` tras mostrar el resultado y la narración
+    - IMPORTANTE: POST /resultados recibe campeonA y campeonB como IDS (texto), pero POST /narraciones los recibe como OBJETOS completos del campeón (con nombre e id). Respetar esa diferencia.
     - _Requisitos: 7.1, 7.2, 7.3, 8.1, 8.2, 12.1_
 
   - [ ] 8.5 Implementar `RankingScene` y responsividad global
