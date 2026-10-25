@@ -227,16 +227,23 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Al confirmar la selección, pasar los dos campeones a `ArenaScene`
     - _Requisitos: 11.1, 11.2, 11.3, 11.4, 6.1_
 
-  - [ ] 8.4a Implementar el loop de combate, arena, sprites y barras de vida en `ArenaScene`
+  - [x] 8.4a Implementar el loop de combate, arena, sprites y barras de vida en `ArenaScene`
     - Crear `frontend/scenes/ArenaScene.js` que importa `combat.js` y crea el combate con `crearCombate` usando una semilla aleatoria
     - Implementar el game loop con acumulador de paso fijo (50 ms) en el método `update(time, delta)` de Phaser
     - Renderizar la arena vista desde arriba con sprites de campeones (círculos o sprites simples con los colores del campeón)
     - Mostrar y actualizar las barras de vida de cada campeón al menos cada 1 segundo
+    - IMPORTANTE: combat.js usa una arena de 800x600; escalar las posiciones al tamaño real del canvas para que la arena se vea centrada y completa.
+    - IMPORTANTE: dibujar cada campeón como un círculo de unos 30px de radio con su colorPrincipal y borde de colorSecundario, con su nombre y su barra de vida encima.
+    - IMPORTANTE: mostrar un temporizador de combate arriba al centro y, al terminar, el nombre del ganador (o "Empate") en grande.
     - _Requisitos: 6.1, 6.2, 6.3, 6.4, 6.5, 6.6_
 
-  - [ ] 8.4b Implementar los efectos visuales de habilidades en `ArenaScene`
-    - Renderizar efectos visuales para cada tipo de habilidad: proyectil (línea o sprite animado), embestida (movimiento rápido), área de daño (círculo expandiéndose), escudo (borde luminoso alrededor del campeón), curación (efecto de recuperación)
-    - Usar los eventos del combate devueltos por `actualizarTick` para disparar cada efecto visual en el momento correcto
+  - [x] 8.4b Implementar los efectos visuales de habilidades en `ArenaScene`
+    - Rediseñar ArenaScene con aspecto de coliseo, todo dibujado con Phaser (Graphics, partículas y tweens), sin imágenes externas:
+    - Arena: piso circular de baldosas de piedra, anillo de borde, runas brillantes en el centro, 4 antorchas con fuego animado por partículas, público como puntos animados en las gradas y viñeta oscura en los bordes.
+    - Campeones: sombra debajo, aura brillante con su colorPrincipal, animación de respiración (escala), parpadeo blanco y pequeño retroceso al recibir daño, números de daño flotantes (amarillos y más grandes si el evento tiene critico: true).
+    - HUD estilo juego de pelea: barras de vida grandes arriba a la izquierda (campeón A) y a la derecha (campeón B) con nombre y color de cada uno; temporizador al centro. Quitar los nombres y barras que están encima de los campeones.
+    - Efectos por habilidad usando los eventos de actualizarTick: proyectil (bola de energía con estela que viaja al objetivo), embestida (dash con rastro), area (onda expansiva circular), escudo (burbuja translúcida mientras dure), curacion (partículas verdes subiendo), critico (sacudida de cámara).
+    - Pantalla final: oscurecer el fondo, mostrar "¡VICTORIA!" y el nombre del ganador (o "¡EMPATE!") con animación de entrada, sin tapar nada sin fondo.
     - _Requisitos: 6.2, 6.3_
 
   - [ ] 8.4c Implementar el fin de combate: registro de resultado, narración y navegación en `ArenaScene`
