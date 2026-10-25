@@ -1,0 +1,14 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "cloudborn-legends"
+resolve_s3 = true
+s3_prefix = "cloudborn-legends"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = "BedrockModelId=\"amazon.nova-micro-v1:0\""
+image_repositories = []
+
+[default.global.parameters]
+region = "us-east-1"

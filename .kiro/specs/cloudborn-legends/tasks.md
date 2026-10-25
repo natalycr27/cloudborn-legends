@@ -97,7 +97,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - **Valida: Requisitos 5.5, 3.8, 4.1, 4.3, 4.4, 5.4, 10.7, 19.4**
     - Generar campeones con habilidades duplicadas o fuera del catálogo; verificar rechazo con error descriptivo y que no se emite ni almacena un campeón inválido
 
-- [ ] 3. Punto de control — despliegue del backend base
+- [x] 3. Punto de control — despliegue del backend base
   - Ejecutar `sam build` para verificar que el template compila sin errores
   - Ejecutar `sam deploy --guided` en la región `us-east-1` (primera vez) o `sam deploy` (despliegues posteriores)
   - Verificar que `ApiUrl` aparece en los outputs de CloudFormation
