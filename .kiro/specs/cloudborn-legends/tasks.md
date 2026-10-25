@@ -211,7 +211,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - Leer `window.CONFIG.apiUrl` para las llamadas a la API; usar `http://localhost:3000` como valor por defecto si `window.CONFIG` no existe
     - _Requisitos: 1.1, 1.4, 15.1_
 
-  - [ ] 8.2 Implementar `BootScene` e `InvocacionScene`
+  - [x] 8.2 Implementar `BootScene` e `InvocacionScene`
     - Crear `frontend/scenes/BootScene.js`: carga inicial de assets y transición a `InvocacionScene`
     - Crear `frontend/scenes/InvocacionScene.js`:
       - Superponer un `<textarea>` HTML (10-500 chars) y un botón HTML sobre el canvas con `position: absolute` y `z-index` superior al canvas

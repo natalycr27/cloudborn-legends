@@ -335,6 +335,18 @@
         "chatSessionId": "sess_75fae08a-7cbb-457b-82db-2c3306a56a46",
         "timestamp": 1792952160875
       }
+    ],
+    "8.2 Implementar `BootScene` e `InvocacionScene`": [
+      {
+        "executionId": "426794a4-43d3-4565-87ad-34c80f973508",
+        "chatSessionId": "sess_a0d44316-0232-4ad6-a0e4-a09a2a6ef93d",
+        "timestamp": 1792952577383
+      },
+      {
+        "executionId": "426794a4-43d3-4565-87ad-34c80f973508",
+        "chatSessionId": "sess_a0d44316-0232-4ad6-a0e4-a09a2a6ef93d",
+        "timestamp": 1792952732070
+      }
     ]
   }
 }
