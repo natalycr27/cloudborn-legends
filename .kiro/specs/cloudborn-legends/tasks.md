@@ -162,7 +162,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
 - [ ] 6. Punto de control — backend completo
   - Verificar que todos los tests pasan con `pytest backend/ -v`. Consultar al usuario si surge alguna duda.
 
-- [ ] 7. Módulo `combat.js` — lógica de combate pura
+- [x] 7. Módulo `combat.js` — lógica de combate pura
   - [x] 7.1 Implementar las funciones base del módulo `combat.js`
     - Crear `frontend/src/combat.js` como módulo ES; implementar `crearCombate(campeonA, campeonB, configArena, semilla)` que inicializa el `EstadoCombate` completo (posiciones, HP, enfriamientos, escudoActivo, rng con semilla, tiempoTranscurrido, duracionMaxima=90, eventos=[])
     - Implementar `moverCampeon(campeon, objetivo, deltaTiempo)` que mueve en dirección normalizada a velocidad `estadisticas.velocidad` px/s y limita a la arena
@@ -178,7 +178,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
     - IMPORTANTE: la duración del escudo (3 s) y todos los enfriamientos se manejan en segundos usando deltaTiempo, no en turnos.
     - _Requisitos: 6.2, 6.3, 6.4, 6.6, 6.7, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-  - [ ] 7.3 Implementar `simularCombate` y exportar la interfaz pública del módulo
+  - [x] 7.3 Implementar `simularCombate` y exportar la interfaz pública del módulo
     - Implementar `simularCombate(campeonA, campeonB, configArena, semilla)` que ejecuta el loop completo con paso fijo de 50 ms hasta que `determinarGanador` no devuelve `'en_curso'` o se alcanza la duración máxima
     - Exportar todas las funciones públicas; verificar que el módulo se puede importar en Node.js sin Phaser ni DOM
     - _Requisitos: 6.5, 6.6, 7.3, 7.5_

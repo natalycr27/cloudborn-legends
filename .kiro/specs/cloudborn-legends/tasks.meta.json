@@ -304,6 +304,25 @@
         "chatSessionId": "sess_bf01b3e9-dcd0-46e0-8865-60b10239cc9d",
         "timestamp": 1792950911307
       }
+    ],
+    "7.3 Implementar `simularCombate` y exportar la interfaz pública del módulo": [
+      {
+        "executionId": "85aedf08-d237-40ed-a9da-859b78eb9bfb",
+        "chatSessionId": "sess_c69113e8-f260-4e26-8f79-7dc3128bf2e8",
+        "timestamp": 1792951007069
+      },
+      {
+        "executionId": "85aedf08-d237-40ed-a9da-859b78eb9bfb",
+        "chatSessionId": "sess_c69113e8-f260-4e26-8f79-7dc3128bf2e8",
+        "timestamp": 1792951120901
+      }
+    ],
+    "7. Módulo `combat.js` — lógica de combate pura": [
+      {
+        "executionId": "85aedf08-d237-40ed-a9da-859b78eb9bfb",
+        "chatSessionId": "sess_c69113e8-f260-4e26-8f79-7dc3128bf2e8",
+        "timestamp": 1792951121142
+      }
     ]
   }
 }

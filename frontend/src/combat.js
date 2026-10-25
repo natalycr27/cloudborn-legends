@@ -5,14 +5,19 @@
 // explicito y determinista) que puede importarse y ejecutarse en Node.js para
 // pruebas unitarias y de propiedades.
 //
-// Esta primera parte (tarea 7.1) implementa las funciones base:
+// Interfaz publica del modulo:
 //   - crearCombate: inicializa el EstadoCombate completo.
 //   - moverCampeon: mueve un campeon hacia su objetivo limitando a la arena.
 //   - calcularDano: calcula el dano final segun habilidad, armadura y escudo.
+//   - seleccionarHabilidad: decide la habilidad del campeon en cada tick.
+//   - actualizarTick: avanza la simulacion un paso fijo y devuelve eventos.
+//   - determinarGanador / determinarGanadorPorVida: resuelven el desenlace.
+//   - simularCombate: ejecuta el combate completo (usado en pruebas).
+//   - crearRng: generador pseudoaleatorio determinista con semilla.
+//   - Constantes: ARENA_POR_DEFECTO, DURACION_MAXIMA, CATALOGO_HABILIDADES, PASO_FIJO.
 //
-// Las funciones seleccionarHabilidad, actualizarTick, determinarGanador y
-// simularCombate se agregan en tareas posteriores (7.2 y 7.3). El modulo esta
-// estructurado para permitir esa ampliacion sin cambios de interfaz.
+// Todas las funciones son puras o con estado explicito y determinista, de modo
+// que el modulo puede importarse y ejecutarse en Node.js sin Phaser ni DOM.
 
 // ---------------------------------------------------------------------------
 // Constantes de combate
@@ -48,6 +53,12 @@ const MULTIPLICADORES_DANO = Object.freeze({
 // Multiplicador usado cuando la habilidad no esta en la tabla (p. ej. ataque
 // basico sin nombre explicito). Se mantiene neutro para no alterar el dano base.
 const MULTIPLICADOR_POR_DEFECTO = 1.0;
+
+// Factor global de ajuste de dano. Escala el dano final de cada golpe para
+// ajustar el ritmo del combate: con este factor los combates duran, en terminos
+// aproximados, entre 15 y 25 segundos. Se aplica como ultimo paso en
+// calcularDano, por lo que afecta a todas las habilidades ofensivas por igual.
+export const FACTOR_DANO_GLOBAL = 0.45;
 
 // ---------------------------------------------------------------------------
 // Generador de numeros aleatorios determinista (RNG con semilla)
@@ -238,7 +249,9 @@ export function calcularDano(atacante, defensor, habilidad) {
   // La armadura mitiga el dano con una formula de rendimientos decrecientes.
   const armadura = defensor.estadisticas.armadura;
   const reduccionArmadura = armadura / (armadura + 100);
-  const danoFinal = danoBruto * (1 - reduccionArmadura);
+  // El factor global de dano escala el resultado final para ajustar el ritmo
+  // del combate (ver FACTOR_DANO_GLOBAL).
+  const danoFinal = danoBruto * (1 - reduccionArmadura) * FACTOR_DANO_GLOBAL;
 
   return Math.max(0, danoFinal);
 }
@@ -490,7 +503,7 @@ function tipoEventoAtaque(habilidad) {
 // Aplica el efecto (dano, escudo o curacion), pone la habilidad en enfriamiento,
 // respeta los limites de vida [0, vidaMaxima] y registra el evento resultante en
 // el arreglo 'eventos'. No hace nada si 'habilidad' es null.
-function ejecutarHabilidad(atacante, oponente, habilidad, eventos) {
+function ejecutarHabilidad(atacante, oponente, habilidad, eventos, rng) {
   if (!habilidad) {
     return;
   }
@@ -523,17 +536,36 @@ function ejecutarHabilidad(atacante, oponente, habilidad, eventos) {
     return;
   }
 
-  // Habilidad ofensiva: calcula el dano y lo aplica sin que la vida baje de 0.
-  const dano = calcularDano(atacante, oponente, habilidad);
+  // Habilidad ofensiva: calcula el dano base de la habilidad.
+  let dano = calcularDano(atacante, oponente, habilidad);
+
+  // Variacion aleatoria por golpe usando el RNG determinista del combate (nunca
+  // Math.random()). Se consumen SIEMPRE dos valores en orden fijo (primero el
+  // multiplicador de variacion, luego el tiro de critico) para no romper el
+  // determinismo con semilla aunque un golpe no resulte critico.
+  //   - multiplicador de variacion aleatorio en [0.85, 1.15).
+  //   - 10% de probabilidad de golpe critico, que aplica un x1.5 adicional.
+  const variacion = 0.85 + rng.siguiente() * 0.3;
+  const esCritico = rng.siguiente() < 0.1;
+
+  dano *= variacion;
+  if (esCritico) {
+    dano *= 1.5;
+  }
+
   oponente.hp = Math.max(0, oponente.hp - dano);
 
   const nombreLegible = habilidad === 'ataque_basico' ? 'ataque basico' : habilidad.replace(/_/g, ' ');
-  eventos.push({
+  const evento = {
     tipo: tipoEventoAtaque(habilidad),
     campeon: atacante.id,
     objetivo: oponente.id,
     detalle: `${nombreLegible} inflige ${Math.round(dano)} de dano`,
-  });
+  };
+  if (esCritico) {
+    evento.critico = true;
+  }
+  eventos.push(evento);
 }
 
 // actualizarTick: avanza la simulacion del combate un paso de 'deltaTiempo'
@@ -584,14 +616,16 @@ export function actualizarTick(estado, deltaTiempo) {
     b.posicion = moverHastaRango(b, a, deltaTiempo, nuevoEstado.arena, rangoB);
   }
 
-  // 4. Seleccion y ejecucion de habilidades (A actua primero, luego B).
+  // 4. Seleccion y ejecucion de habilidades (A actua primero, luego B). El RNG
+  //    del estado se pasa para la variacion/critico de cada golpe ofensivo; el
+  //    orden fijo A -> B preserva el determinismo con semilla.
   const habilidadA = seleccionarHabilidad(a, nuevoEstado);
-  ejecutarHabilidad(a, b, habilidadA, eventos);
+  ejecutarHabilidad(a, b, habilidadA, eventos, nuevoEstado.rng);
 
   // B solo actua si sigue con vida tras el ataque de A.
   if (b.hp > 0) {
     const habilidadB = seleccionarHabilidad(b, nuevoEstado);
-    ejecutarHabilidad(b, a, habilidadB, eventos);
+    ejecutarHabilidad(b, a, habilidadB, eventos, nuevoEstado.rng);
   }
 
   // 5. Red de seguridad: garantiza la invariante de vida en [0, vidaMaxima].
@@ -666,4 +700,78 @@ export function determinarGanadorPorVida(estado) {
     return { resultado: 'ganador', idGanador: estado.campeonB.id };
   }
   return { resultado: 'empate', idGanador: null };
+}
+
+// ---------------------------------------------------------------------------
+// Simulacion completa del combate
+// ---------------------------------------------------------------------------
+
+// Paso fijo de la simulacion: 50 ms (20 ticks por segundo). Un paso fijo hace
+// el combate determinista e independiente del framerate del navegador.
+export const PASO_FIJO = 0.05;
+
+// simularCombate: ejecuta la simulacion completa de un combate desde el estado
+// inicial hasta que termina, y devuelve el resultado junto con todos los
+// eventos acumulados. Esta funcion se usa principalmente en pruebas (y en
+// simulaciones "en background"); Phaser, en cambio, usa actualizarTick tick a
+// tick para poder renderizar cada paso.
+//
+// El loop avanza con paso fijo de 50 ms (PASO_FIJO) y se detiene en cuanto:
+//   - la vida de algun campeon llega a 0 (lo resuelve determinarGanador), o
+//   - el tiempo transcurrido alcanza la duracion maxima (90 s), en cuyo caso el
+//     combate se resuelve por mayor porcentaje de vida (determinarGanadorPorVida).
+//
+// Devuelve: { resultado, idGanador, eventos, estadoFinal }
+//   - resultado: 'ganador' | 'empate'
+//   - idGanador: id del campeon ganador, o null en empate
+//   - eventos: arreglo con todos los eventos registrados durante el combate
+//   - estadoFinal: el EstadoCombate final (con resultado e idGanador fijados)
+export function simularCombate(campeonA, campeonB, configArena, semilla) {
+  let estado = crearCombate(campeonA, campeonB, configArena, semilla);
+
+  // Cota dura de seguridad: numero maximo de ticks posibles antes de alcanzar la
+  // duracion maxima. Garantiza la terminacion del loop incluso ante errores de
+  // punto flotante en la acumulacion del tiempo (nunca se queda colgado).
+  const maxTicks = Math.ceil(estado.duracionMaxima / PASO_FIJO) + 1;
+  let ticks = 0;
+
+  // El combate sigue mientras no haya un resultado definido (en curso).
+  while (estado.resultado === null && ticks < maxTicks) {
+    ticks += 1;
+
+    // Avanza un paso fijo de la simulacion sin mutar el estado anterior.
+    const paso = actualizarTick(estado, PASO_FIJO);
+    estado = paso.estado;
+
+    // Acumula los eventos generados en este tick en el historial del combate.
+    estado.eventos.push(...paso.eventos);
+
+    // Condicion de fin por vida en cero: si alguno llego a 0, se resuelve el
+    // ganador (o empate si ambos cayeron en el mismo tick).
+    if (estado.campeonA.hp <= 0 || estado.campeonB.hp <= 0) {
+      const desenlace = determinarGanador(estado);
+      estado.resultado = desenlace.resultado;
+      estado.idGanador = desenlace.idGanador;
+    } else if (estado.tiempoTranscurrido >= estado.duracionMaxima) {
+      // Condicion de fin por tiempo: se resuelve por mayor porcentaje de vida.
+      const desenlace = determinarGanadorPorVida(estado);
+      estado.resultado = desenlace.resultado;
+      estado.idGanador = desenlace.idGanador;
+    }
+  }
+
+  // Red de seguridad: si se alcanzo la cota de ticks sin resultado (no deberia
+  // ocurrir), se resuelve por porcentaje de vida para garantizar un desenlace.
+  if (estado.resultado === null) {
+    const desenlace = determinarGanadorPorVida(estado);
+    estado.resultado = desenlace.resultado;
+    estado.idGanador = desenlace.idGanador;
+  }
+
+  return {
+    resultado: estado.resultado,
+    idGanador: estado.idGanador,
+    eventos: estado.eventos,
+    estadoFinal: estado,
+  };
 }

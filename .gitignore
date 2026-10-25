@@ -4,3 +4,4 @@ __pycache__
 .aws-sam/
 node_modules/
 frontend/config.js
+prueba_combate.mjs
