@@ -128,6 +128,25 @@
         cursor: not-allowed;
       }
 
+      /* Boton secundario para ir a la arena con campeones existentes.
+         Reutiliza el mismo estilo que el boton secundario "Crear otro campeón"
+         de la tarjeta (fondo #2a335a con borde #4f6bff) y conserva el area
+         tactil minima de 44px del boton principal. */
+      #boton-ir-arena-existentes {
+        min-height: 44px;
+        padding: 12px 20px;
+        font-size: 16px;
+        font-weight: 600;
+        border-radius: 8px;
+        background: #2a335a;
+        color: #e8eefc;
+        border: 1px solid #4f6bff;
+        cursor: pointer;
+      }
+      #boton-ir-arena-existentes:hover {
+        background: #333e6e;
+      }
+
       /* Mensajes de estado (carga / error) en espanol (Requisitos 2.2, 2.4, 2.5). */
       #mensaje-invocacion {
         min-height: 20px;
@@ -297,6 +316,12 @@
           ></textarea>
           <div id="contador-caracteres">0 / 500</div>
           <button id="boton-invocar" type="button">Invocar</button>
+          <!-- Acceso directo a la arena usando campeones ya existentes, sin
+               crear uno nuevo. Usa el mismo estilo secundario que el boton
+               "Crear otro campeón" de la tarjeta. -->
+          <button id="boton-ir-arena-existentes" type="button">
+            Ir a la arena con campeones existentes
+          </button>
           <div id="mensaje-invocacion"></div>
         </div>
 

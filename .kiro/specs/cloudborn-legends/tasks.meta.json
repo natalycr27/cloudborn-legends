@@ -347,6 +347,18 @@
         "chatSessionId": "sess_a0d44316-0232-4ad6-a0e4-a09a2a6ef93d",
         "timestamp": 1792952732070
       }
+    ],
+    "8.3 Implementar `SeleccionScene`": [
+      {
+        "executionId": "45a233fe-934e-4833-9027-acd5348f62ed",
+        "chatSessionId": "sess_33b0c756-f52e-4eeb-b21a-22dd28ede6ce",
+        "timestamp": 1792953438476
+      },
+      {
+        "executionId": "45a233fe-934e-4833-9027-acd5348f62ed",
+        "chatSessionId": "sess_33b0c756-f52e-4eeb-b21a-22dd28ede6ce",
+        "timestamp": 1792953686579
+      }
     ]
   }
 }

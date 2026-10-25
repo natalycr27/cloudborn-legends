@@ -222,7 +222,7 @@ Implementación incremental del juego web serverless Cloudborn Legends. Las tare
       - Llamar a `POST /campeones` y pasar el campeón a `SeleccionScene` al éxito
     - _Requisitos: 1.4, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6_
 
-  - [ ] 8.3 Implementar `SeleccionScene`
+  - [x] 8.3 Implementar `SeleccionScene`
     - Crear `frontend/scenes/SeleccionScene.js` que llama a `GET /campeones`, muestra cada campeón con nombre, estadísticas y colores, y permite al jugador seleccionar dos campeones
     - Al confirmar la selección, pasar los dos campeones a `ArenaScene`
     - _Requisitos: 11.1, 11.2, 11.3, 11.4, 6.1_

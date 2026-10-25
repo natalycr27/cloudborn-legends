@@ -50,6 +50,10 @@ export default class InvocacionScene extends Phaser.Scene {
     this.botonCrearOtro = null;
     this.botonIrArena = null;
 
+    // Boton secundario del formulario para ir directo a la arena con los
+    // campeones ya existentes, sin crear uno nuevo.
+    this.botonIrArenaExistentes = null;
+
     // Campeon mostrado actualmente en la tarjeta (para "Ir a la arena").
     this.campeonActual = null;
 
@@ -58,6 +62,7 @@ export default class InvocacionScene extends Phaser.Scene {
     this.alInvocar = null;
     this.alCrearOtro = null;
     this.alIrArena = null;
+    this.alIrArenaExistentes = null;
 
     // Evita envios simultaneos mientras una invocacion esta en curso.
     this.generando = false;
@@ -73,6 +78,9 @@ export default class InvocacionScene extends Phaser.Scene {
     this.boton = document.getElementById("boton-invocar");
     this.contador = document.getElementById("contador-caracteres");
     this.mensaje = document.getElementById("mensaje-invocacion");
+    this.botonIrArenaExistentes = document.getElementById(
+      "boton-ir-arena-existentes"
+    );
 
     // Elementos de la tarjeta del campeon recien creado.
     this.tarjeta = document.getElementById("tarjeta-campeon");
@@ -109,6 +117,16 @@ export default class InvocacionScene extends Phaser.Scene {
     // Boton de invocar: dispara la validacion y la generacion del campeon.
     this.alInvocar = () => this.invocarCampeon();
     this.boton.addEventListener("click", this.alInvocar);
+
+    // Boton secundario: ir directo a la arena con los campeones existentes,
+    // sin crear uno nuevo (arranca SeleccionScene sin campeon preseleccionado).
+    if (this.botonIrArenaExistentes) {
+      this.alIrArenaExistentes = () => this.irAArenaExistentes();
+      this.botonIrArenaExistentes.addEventListener(
+        "click",
+        this.alIrArenaExistentes
+      );
+    }
 
     // Botones de la tarjeta: crear otro campeon o ir a la arena.
     if (this.botonCrearOtro) {
@@ -391,6 +409,19 @@ export default class InvocacionScene extends Phaser.Scene {
       .replace(/"/g, "&quot;");
   }
 
+  // "Ir a la arena con campeones existentes": no crea ningun campeon; oculta el
+  // overlay y pasa directo a SeleccionScene sin preseleccionar a nadie. Evita
+  // transicionar si hay una invocacion en curso.
+  irAArenaExistentes() {
+    if (this.generando) {
+      return;
+    }
+    if (this.overlay) {
+      this.overlay.classList.remove("visible");
+    }
+    this.scene.start("SeleccionScene");
+  }
+
   // "Ir a la arena": oculta el overlay y transiciona a SeleccionScene pasando
   // el campeon recien creado para que quede disponible como oponente.
   irASeleccion(campeon) {
@@ -417,6 +448,12 @@ export default class InvocacionScene extends Phaser.Scene {
     if (this.botonIrArena && this.alIrArena) {
       this.botonIrArena.removeEventListener("click", this.alIrArena);
     }
+    if (this.botonIrArenaExistentes && this.alIrArenaExistentes) {
+      this.botonIrArenaExistentes.removeEventListener(
+        "click",
+        this.alIrArenaExistentes
+      );
+    }
     if (this.overlay) {
       this.overlay.classList.remove("visible");
     }
@@ -424,5 +461,6 @@ export default class InvocacionScene extends Phaser.Scene {
     this.alInvocar = null;
     this.alCrearOtro = null;
     this.alIrArena = null;
+    this.alIrArenaExistentes = null;
   }
 }
