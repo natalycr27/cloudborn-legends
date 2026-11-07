@@ -103,6 +103,7 @@ Write-Host '[5/5] Sincronizando el frontend con S3 e invalidando CloudFront...' 
 aws s3 sync $FrontendDir "s3://$FrontendBucket" `
     --region $Region `
     --delete `
+    --exclude 'generados/*' `
     --exclude 'node_modules/*' `
     --exclude '*.test.js' `
     --exclude 'package.json' `

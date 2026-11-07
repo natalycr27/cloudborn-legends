@@ -16,6 +16,18 @@ Parameters:
     Default: amazon.nova-micro-v1:0
     Description: Identificador del modelo de Amazon Bedrock a invocar (API Converse).
 
+  # Modelo de imagen (Stability AI) para generar retratos y arenas.
+  ImageModelId:
+    Type: String
+    Default: stability.sd3-5-large-v1:0
+    Description: Identificador del modelo de imagen de Stability AI en Amazon Bedrock.
+
+  # Region donde se invoca el modelo de imagen (el resto del stack va en us-east-1).
+  ImageRegion:
+    Type: String
+    Default: us-west-2
+    Description: Region de AWS donde se invoca el modelo de imagen.
+
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +170,16 @@ Resources:
           HttpMethod: '*'
           ThrottlingRateLimit: 25
           ThrottlingBurstLimit: 50
+        # Throttling mas bajo en las rutas de generacion de imagenes (costo).
+        # En ResourcePath, "/" se escribe "~1".
+        - ResourcePath: '/~1campeones~1{id}~1retrato'
+          HttpMethod: POST
+          ThrottlingRateLimit: 2
+          ThrottlingBurstLimit: 5
+        - ResourcePath: '/~1arenas'
+          HttpMethod: POST
+          ThrottlingRateLimit: 2
+          ThrottlingBurstLimit: 5
 
       # Respuestas de error propias de API Gateway (429, 403, 5xx) con CORS,
       # para que el navegador muestre el error real y no un error de CORS.
@@ -309,6 +331,123 @@ Resources:
                 Action:
                   - bedrock:InvokeModel
                 Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/${BedrockModelId}'
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para generar_retrato: modelo de imagen, S3 generados/* y
+  # lectura/actualizacion puntual del campeon.
+  # -------------------------------------------------------------------------
+  GenerarRetratoRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: GenerarRetratoPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/${ImageModelId}'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${FrontendBucket.Arn}/generados/*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt CloudbornLegendsTable.Arn
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:us-east-1::foundation-model/${BedrockModelId}'
+
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para generar_arena: modelo de imagen y S3 generados/*.
+  # -------------------------------------------------------------------------
+  GenerarArenaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: GenerarArenaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/${ImageModelId}'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub '${FrontendBucket.Arn}/generados/*'
+
+  # -------------------------------------------------------------------------
+  # Lambda generar_retrato (POST /campeones/{id}/retrato). Timeout de 28 s
+  # (API Gateway REST corta a los 29 s).
+  # -------------------------------------------------------------------------
+  GenerarRetratoFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: generar_retrato.app.lambda_handler
+      Timeout: 28
+      Role: !GetAtt GenerarRetratoRole.Arn
+      Environment:
+        Variables:
+          IMAGE_MODEL_ID: !Ref ImageModelId
+          IMAGE_REGION: !Ref ImageRegion
+          BUCKET_NAME: !Ref FrontendBucket
+          CLOUDFRONT_URL: !Sub 'https://${CloudFrontDistribution.DomainName}'
+          TABLE_NAME: !Ref CloudbornLegendsTable
+      Events:
+        GenerarRetrato:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /campeones/{id}/retrato
+            Method: post
+
+  # -------------------------------------------------------------------------
+  # Lambda generar_arena (POST /arenas). Timeout de 28 s.
+  # -------------------------------------------------------------------------
+  GenerarArenaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: generar_arena.app.lambda_handler
+      Timeout: 28
+      Role: !GetAtt GenerarArenaRole.Arn
+      Environment:
+        Variables:
+          IMAGE_MODEL_ID: !Ref ImageModelId
+          IMAGE_REGION: !Ref ImageRegion
+          BUCKET_NAME: !Ref FrontendBucket
+          CLOUDFRONT_URL: !Sub 'https://${CloudFrontDistribution.DomainName}'
+          TABLE_NAME: !Ref CloudbornLegendsTable
+      Events:
+        GenerarArena:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /arenas
+            Method: post
 
   # -------------------------------------------------------------------------
   # Lambda crear_campeon (POST /campeones): genera el campeon via Bedrock,

@@ -56,10 +56,12 @@ SYSTEM_PROMPT = (
     },
     "habilidades": ["proyectil", "escudo"],
     "colorPrincipal": "#C0392B",
-    "colorSecundario": "#F1C40F"
+    "colorSecundario": "#F1C40F",
+    "promptImagen": "A muscular blacksmith warrior with a glowing molten hammer, ember-lit armor, red and gold palette, fiery determined eyes"
     }
 
     Reglas:
+    - "promptImagen": descripción visual del campeón EN INGLÉS, de máximo 60 palabras (aspecto, ropa, armas, colores, ambiente). No menciones nombres de videojuegos, marcas, personajes existentes ni personas reales.
     - "nombre": un nombre épico en español de máximo 30 caracteres, sin paréntesis ni explicaciones. El nombre debe ser apto para todo público: sin groserías, insultos ni referencias a personas reales.
     - Todas las estadísticas son números enteros dentro de estos rangos: vida 800-1200, dano 50-150, velocidad 200-400, armadura 10-50.
     - Las estadísticas deben reflejar la descripción y estar BALANCEADAS: si el campeón es fuerte en algo, debe ser débil en otra cosa. Un tanque tiene mucha vida y armadura pero poca velocidad; un asesino tiene mucho daño y velocidad pero poca vida. Nunca pongas todas las estadísticas cerca del máximo.
@@ -254,6 +256,10 @@ def _guardar_campeon(campeon):
         "createdAt": campeon["createdAt"],
     }
 
+    # promptImagen es opcional: si falta o no es valido, no se guarda.
+    if campeon.get("promptImagen"):
+        item["promptImagen"] = campeon["promptImagen"]
+
     tabla.put_item(Item=item)
 
     # Reflejar en el campeon las estadisticas ya normalizadas a int para que la
@@ -318,9 +324,8 @@ def lambda_handler(event, context):
             raise ValueError('El campeon generado no es un objeto JSON.')
         _normalizar_estadisticas(campeon)
         _normalizar_habilidades(campeon)
-        _normalizar_estadisticas(campeon)
-        _normalizar_habilidades(campeon)
         _normalizar_nombre(campeon)
+        _normalizar_prompt_imagen(campeon)
         campeon = validar_y_ajustar(campeon)
         
     except (ValueError, CampeonInvalidoError) as e:
@@ -377,3 +382,17 @@ def _normalizar_nombre(campeon):
     if len(nombre) > 30:
         nombre = nombre[:30].rsplit(" ", 1)[0].strip()
     campeon["nombre"] = nombre
+
+
+def _normalizar_prompt_imagen(campeon):
+    """Normaliza 'promptImagen' (opcional): texto de maximo 60 palabras.
+
+    Si falta o no es texto valido se elimina del campeon; nunca lanza error,
+    para que la creacion no falle por este campo.
+    """
+    prompt = campeon.get("promptImagen")
+    if not isinstance(prompt, str) or prompt.strip() == "":
+        campeon.pop("promptImagen", None)
+        return
+    palabras = prompt.split()
+    campeon["promptImagen"] = " ".join(palabras[:60])
