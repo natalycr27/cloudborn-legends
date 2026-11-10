@@ -7,7 +7,9 @@
 //
 // Interfaz publica del modulo:
 //   - crearCombate: inicializa el EstadoCombate completo.
-//   - moverCampeon: mueve un campeon hacia su objetivo limitando a la arena.
+//   - moverCampeon: mueve un campeon hacia su objetivo limitando al circulo de combate.
+//   (actualizarTick mueve a los campeones por toda la arena con una IA de posicionamiento:
+//   kiting a distancia, persecucion/retroceso cuerpo a cuerpo, huida y embestida.)
 //   - calcularDano: calcula el dano final segun habilidad, armadura y escudo.
 //   - seleccionarHabilidad: decide la habilidad del campeon en cada tick.
 //   - actualizarTick: avanza la simulacion un paso fijo y devuelve eventos.
@@ -55,10 +57,11 @@ const MULTIPLICADORES_DANO = Object.freeze({
 const MULTIPLICADOR_POR_DEFECTO = 1.0;
 
 // Factor global de ajuste de dano. Escala el dano final de cada golpe para
-// ajustar el ritmo del combate: con este factor los combates duran, en terminos
-// aproximados, entre 15 y 25 segundos. Se aplica como ultimo paso en
+// ajustar el ritmo del combate: con este factor y el movimiento por toda la arena
+// (kiting a distancia, retroceso cuerpo a cuerpo) los combates duran, en terminos
+// aproximados, entre 15 y 35 segundos (mediana ~18 s). Se aplica como ultimo paso en
 // calcularDano, por lo que afecta a todas las habilidades ofensivas por igual.
-export const FACTOR_DANO_GLOBAL = 0.45;
+export const FACTOR_DANO_GLOBAL = 0.5;
 
 // ---------------------------------------------------------------------------
 // Generador de numeros aleatorios determinista (RNG con semilla)
@@ -112,17 +115,39 @@ function normalizarDireccion(origen, destino) {
   return { x: dx / magnitud, y: dy / magnitud };
 }
 
-// Limita una posicion {x, y} para que permanezca dentro de los limites de la
-// arena. Los campeones no pueden salir del rectangulo [0, ancho] x [0, alto].
-function limitarALaArena(posicion, arena) {
+// Geometria del area de combate. El combate ocurre dentro de un circulo que
+// ocupa casi toda la arena (radio ~280 centrado en el centro de la arena; en
+// la arena por defecto de 800x600 el centro es (400, 300)).
+export const RADIO_ARENA = 280;
+
+// Distancia minima permitida entre los dos campeones (en pixeles). Nunca se
+// encimaran: si un movimiento los acerca mas, se separan.
+export const DISTANCIA_MINIMA = 50;
+
+// Calcula el centro y el radio del circulo de combate para una arena dada. El
+// radio es RADIO_ARENA, salvo que la arena sea mas chica (se deja un margen).
+function geometriaArena(arena) {
   const ancho = arena && typeof arena.ancho === 'number' ? arena.ancho : ARENA_POR_DEFECTO.ancho;
   const alto = arena && typeof arena.alto === 'number' ? arena.alto : ARENA_POR_DEFECTO.alto;
-  return {
-    x: Math.min(Math.max(posicion.x, 0), ancho),
-    y: Math.min(Math.max(posicion.y, 0), alto),
-  };
+  const radio = Math.max(1, Math.min(RADIO_ARENA, Math.min(ancho, alto) / 2 - 20));
+  return { cx: ancho / 2, cy: alto / 2, radio };
 }
 
+// Limita una posicion {x, y} al circulo de combate. Si queda fuera, se proyecta
+// radialmente sobre el borde: el componente tangencial del paso se conserva, por
+// lo que el campeon se desliza a lo largo del borde en lugar de frenarse.
+function limitarALaArena(posicion, arena) {
+  const { cx, cy, radio } = geometriaArena(arena);
+  const dx = posicion.x - cx;
+  const dy = posicion.y - cy;
+  const distancia = Math.hypot(dx, dy);
+  const limite = radio - 1e-9;
+  if (distancia <= limite) {
+    return { x: posicion.x, y: posicion.y };
+  }
+  const k = limite / distancia;
+  return { x: cx + dx * k, y: cy + dy * k };
+}
 // ---------------------------------------------------------------------------
 // Inicializacion del estado de combate
 // ---------------------------------------------------------------------------
@@ -131,7 +156,7 @@ function limitarALaArena(posicion, arena) {
 // definicion (la que viene de la API). Clona el campeon para no mutar el
 // original y le agrega el estado de combate: hp, posicion, enfriamientos,
 // escudoActivo y escudoTurnos.
-function inicializarCampeon(campeon, posicion) {
+function inicializarCampeon(campeon, posicion, ia) {
   const vidaMaxima = campeon.estadisticas.vida;
 
   // Enfriamientos por habilidad: cada habilidad del campeon arranca lista para
@@ -154,6 +179,8 @@ function inicializarCampeon(campeon, posicion) {
     enfriamientos,
     escudoActivo: false,
     escudoTurnos: 0,
+    ia, // estado de IA de movimiento (ver crearIA)
+    movimiento: { x: 0, y: 0 }, // velocidad real del ultimo tick (px/s)
   };
 }
 
@@ -165,31 +192,38 @@ function inicializarCampeon(campeon, posicion) {
 //   { campeonA, campeonB, tiempoTranscurrido, duracionMaxima, arena, eventos,
 //     resultado, idGanador, rng }
 export function crearCombate(campeonA, campeonB, configArena, semilla) {
-  // Arena: usa la configuracion recibida o la arena por defecto (800x600).
+  // Arena: usa la configuracion recibida o la arena por defecto (800x600). Ademas
+  // expone el circulo de combate (centro y radio) para que la escena lo dibuje.
   const arena = {
     ancho: configArena && typeof configArena.ancho === 'number' ? configArena.ancho : ARENA_POR_DEFECTO.ancho,
     alto: configArena && typeof configArena.alto === 'number' ? configArena.alto : ARENA_POR_DEFECTO.alto,
   };
+  const geometria = geometriaArena(arena);
+  arena.centroX = geometria.cx;
+  arena.centroY = geometria.cy;
+  arena.radio = geometria.radio;
+
+  // RNG determinista del combate: toda la aleatoriedad (movimiento y dano) sale
+  // de aqui, nunca de Math.random().
+  const rng = crearRng(semilla);
 
   // Posiciones iniciales: campeon A a la izquierda y campeon B a la derecha,
-  // ambos centrados verticalmente. Se separan a un cuarto del ancho de cada
-  // borde para que empiecen enfrentados con distancia entre ellos.
-  const posicionA = { x: arena.ancho * 0.25, y: arena.alto / 2 };
-  const posicionB = { x: arena.ancho * 0.75, y: arena.alto / 2 };
+  // ambos centrados verticalmente (siempre dentro del circulo de combate).
+  const posicionA = limitarALaArena({ x: arena.ancho * 0.25, y: arena.alto / 2 }, arena);
+  const posicionB = limitarALaArena({ x: arena.ancho * 0.75, y: arena.alto / 2 }, arena);
 
   return {
-    campeonA: inicializarCampeon(campeonA, posicionA),
-    campeonB: inicializarCampeon(campeonB, posicionB),
+    campeonA: inicializarCampeon(campeonA, posicionA, crearIA(rng)),
+    campeonB: inicializarCampeon(campeonB, posicionB, crearIA(rng)),
     tiempoTranscurrido: 0, // segundos transcurridos de combate
     duracionMaxima: DURACION_MAXIMA, // 90 segundos
     arena,
     eventos: [], // eventos registrados para el narrador
     resultado: null, // 'ganador' | 'empate' | null (en curso)
     idGanador: null,
-    rng: crearRng(semilla), // generador determinista reproducible con semilla
+    rng, // generador determinista reproducible con semilla
   };
 }
-
 // ---------------------------------------------------------------------------
 // Movimiento
 // ---------------------------------------------------------------------------
@@ -330,7 +364,7 @@ function esHabilidadOfensiva(habilidad) {
 // habilidad ofensiva lista cuyo rango alcanza la distancia actual. Se usa para
 // decidir cuando conviene levantar el escudo.
 function oponenteAtaca(oponente, distancia) {
-  if (distancia <= RANGO_HABILIDAD.ataque_basico) {
+  if (distancia <= rangoAtaqueBasico(oponente)) {
     return true;
   }
   const habilidades = Array.isArray(oponente.habilidades) ? oponente.habilidades : [];
@@ -419,7 +453,7 @@ export function seleccionarHabilidad(campeon, estado) {
   }
 
   // 5. Ataque basico: disponible siempre, pero solo a rango corto (60 px).
-  if (habilidadDisponible(campeon, 'ataque_basico') && distancia <= RANGO_HABILIDAD.ataque_basico) {
+  if (habilidadDisponible(campeon, 'ataque_basico') && distancia <= rangoAtaqueBasico(campeon)) {
     return 'ataque_basico';
   }
 
@@ -431,28 +465,363 @@ export function seleccionarHabilidad(campeon, estado) {
 // Avance de un tick de combate
 // ---------------------------------------------------------------------------
 
-// Determina a que distancia (rango) un campeon debe detenerse para usar la
-// mejor habilidad que tiene disponible. Esto evita que se encime sobre el
-// oponente: el campeon avanza solo hasta quedar dentro del rango de la habilidad
-// que podra ejecutar. Si no tiene ninguna habilidad de ataque disponible en
-// este momento, se acerca hasta el rango del ataque basico (60 px).
-function rangoDeDetencion(campeon) {
-  const habilidades = Array.isArray(campeon.habilidades) ? campeon.habilidades : [];
-  let rango = RANGO_HABILIDAD.ataque_basico; // objetivo minimo: rango del basico
+// ---------------------------------------------------------------------------
+// Movimiento por la arena (IA de posicionamiento)
+// ---------------------------------------------------------------------------
+//
+// Cada campeon lleva un pequeno estado de IA (campeon.ia) con el sentido en que
+// orbita, el tiempo hasta el proximo posible cambio de sentido, el tiempo de
+// retroceso tras un golpe cuerpo a cuerpo y la embestida en curso. TODA la
+// aleatoriedad sale de estado.rng.siguiente() para mantener el determinismo.
 
-  // Entre las habilidades ofensivas disponibles, el campeon puede detenerse en
-  // el mayor rango util (asi ataca a distancia sin acercarse de mas).
-  for (const habilidad of habilidades) {
-    if (!esHabilidadOfensiva(habilidad)) {
-      continue;
-    }
-    if (habilidadDisponible(campeon, habilidad)) {
-      rango = Math.max(rango, RANGO_HABILIDAD[habilidad]);
-    }
-  }
-  return rango;
+// Banda de distancia que mantienen los campeones a distancia (px).
+const DISTANCIA_BANDA_MIN = 200;
+const DISTANCIA_BANDA_MAX = 260;
+// Banda mas estrecha ("distancia media") cuando aun no tienen habilidades listas.
+const DISTANCIA_MEDIA_MIN = 215;
+const DISTANCIA_MEDIA_MAX = 245;
+// Un campeon de area pura se acerca a esta distancia para lanzar su area (120 px).
+const DISTANCIA_LANZAR_AREA = 100;
+// Distancia a la que se planta un campeon cuerpo a cuerpo (cabe en el basico, 60 px).
+const DISTANCIA_CUERPO_A_CUERPO = 55;
+// Distancia a la que retrocede/gira un campeon cuerpo a cuerpo tras golpear.
+const DISTANCIA_RETROCESO = 115;
+const DISTANCIA_GIRO = 90;
+// Duracion del retroceso tras golpear (segundos): entre 0.5 y 1.2 s.
+const RETROCESO_MIN = 0.5;
+const RETROCESO_MAX = 1.2;
+// Cada cuanto (segundos) se evalua cambiar el sentido de la orbita.
+const CAMBIO_SENTIDO_MIN = 1.5;
+const CAMBIO_SENTIDO_MAX = 4;
+// Vida (fraccion) bajo la cual un campeon con curacion huye al borde opuesto.
+const UMBRAL_HUIDA = 0.35;
+// Segundos tras usar la curacion durante los que sigue alejandose ("mientras se cura").
+const VENTANA_CURACION = 4;
+// La embestida es un tramo rapido: multiplica la velocidad del campeon.
+const FACTOR_VELOCIDAD_EMBESTIDA = 3.5;
+// El tramo de la embestida rodea al rival (sin pisarlo) y termina a esta
+// distancia, del otro lado del rival.
+const DISTANCIA_EMBESTIDA = 72;
+// Fraccion del radio a partir de la cual los campeones que orbitan se alejan del borde.
+const FRACCION_BORDE_SUAVE = 0.8;
+
+// Alcance del ataque basico: los campeones a distancia disparan su ataque basico
+// desde la banda de kiting (no pueden pegar de cerca porque se mantienen lejos);
+// los cuerpo a cuerpo lo usan a 60 px.
+const RANGO_BASICO_A_DISTANCIA = 280;
+function rangoAtaqueBasico(campeon) {
+  return esADistancia(campeon) ? RANGO_BASICO_A_DISTANCIA : RANGO_HABILIDAD.ataque_basico;
 }
 
+// Crea el estado de IA inicial de un campeon usando el RNG del combate.
+function crearIA(rng) {
+  const sentido = rng.siguiente() < 0.5 ? 1 : -1;
+  const espera = CAMBIO_SENTIDO_MIN + rng.siguiente() * (CAMBIO_SENTIDO_MAX - CAMBIO_SENTIDO_MIN);
+  return { sentido, tiempoCambio: espera, retroceso: 0, modoRetroceso: 0, embestida: null };
+}
+
+// Copia el estado de IA (incluida la ruta de la embestida) para no mutar la entrada.
+function clonarIA(ia) {
+  return {
+    ...ia,
+    embestida: ia.embestida
+      ? { puntos: ia.embestida.puntos.map((p) => ({ x: p.x, y: p.y })) }
+      : null,
+  };
+}
+
+// Descuenta el temporizador de cambio de sentido y, al agotarse, decide con el
+// RNG si invierte la orbita. Siempre consume dos valores al agotarse para que la
+// secuencia del RNG no dependa de la decision.
+function avanzarIA(campeon, deltaTiempo, rng) {
+  const ia = campeon.ia;
+  ia.tiempoCambio -= deltaTiempo;
+  if (ia.tiempoCambio <= 0) {
+    const tirada = rng.siguiente();
+    const espera = CAMBIO_SENTIDO_MIN + rng.siguiente() * (CAMBIO_SENTIDO_MAX - CAMBIO_SENTIDO_MIN);
+    if (tirada < 0.5) {
+      ia.sentido = -ia.sentido;
+    }
+    ia.tiempoCambio = espera;
+  }
+}
+
+// Tras golpear cuerpo a cuerpo, el campeon se aparta un momento (0.5 a 1.2 s) y
+// elige con el RNG si retrocede (0) o gira alrededor del rival (1).
+function iniciarRetroceso(campeon, rng) {
+  campeon.ia.retroceso = RETROCESO_MIN + rng.siguiente() * (RETROCESO_MAX - RETROCESO_MIN);
+  campeon.ia.modoRetroceso = rng.siguiente() < 0.5 ? 0 : 1;
+}
+
+// Indica si el campeon es "a distancia" (tiene proyectil o area_de_dano).
+function esADistancia(campeon) {
+  const habilidades = Array.isArray(campeon.habilidades) ? campeon.habilidades : [];
+  return habilidades.includes('proyectil') || habilidades.includes('area_de_dano');
+}
+
+// Un campeon con curacion y vida baja se aleja del rival mientras se cura: huye
+// si la curacion esta lista o si la uso hace pocos segundos.
+function debeHuir(campeon) {
+  const habilidades = Array.isArray(campeon.habilidades) ? campeon.habilidades : [];
+  if (!habilidades.includes('curacion') || campeon.hp >= campeon.vidaMaxima * UMBRAL_HUIDA) {
+    return false;
+  }
+  const enfriamiento = campeon.enfriamientos.curacion;
+  return enfriamiento <= 1e-9 || enfriamiento > ENFRIAMIENTO_HABILIDAD.curacion - VENTANA_CURACION;
+}
+
+// Normaliza un vector (x, y); devuelve el nulo si su longitud es ~0.
+function normalizarVector(x, y) {
+  const magnitud = Math.hypot(x, y);
+  if (magnitud < 1e-9) {
+    return { x: 0, y: 0 };
+  }
+  return { x: x / magnitud, y: y / magnitud };
+}
+
+function acotar(valor, minimo, maximo) {
+  return Math.min(maximo, Math.max(minimo, valor));
+}
+
+// Mantiene al campeon dentro de una banda [min, max] de distancia al rival:
+// se aleja si esta muy cerca, se acerca si esta lejos y orbita si esta dentro.
+// u = direccion hacia el rival, t = direccion tangente (sentido de la orbita).
+function mantenerDistancia(u, t, distancia, min, max) {
+  if (distancia < min) {
+    return { dir: normalizarVector(-u.x + t.x * 0.6, -u.y + t.y * 0.6), factor: 1 };
+  }
+  if (distancia > max) {
+    return {
+      dir: normalizarVector(u.x + t.x * 0.3, u.y + t.y * 0.3),
+      factor: 1,
+      tope: distancia - max,
+    };
+  }
+  const radial = acotar((distancia - (min + max) / 2) / ((max - min) / 2), -1, 1) * 0.5;
+  return { dir: normalizarVector(t.x + u.x * radial, t.y + u.y * radial), factor: 0.75 };
+}
+
+// Mientras orbita, el campeon se aleja suavemente del borde para recorrer toda
+// la arena en vez de pegarse a la pared.
+function alejarDelBorde(movimiento, posicion, geometria) {
+  const dCentro = Math.hypot(posicion.x - geometria.cx, posicion.y - geometria.cy);
+  const limite = geometria.radio * FRACCION_BORDE_SUAVE;
+  if (dCentro <= limite || dCentro < 1e-9) {
+    return movimiento;
+  }
+  const peso = Math.min(1, (dCentro - limite) / (geometria.radio * (1 - FRACCION_BORDE_SUAVE))) * 1.2;
+  const haciaCentro = { x: (geometria.cx - posicion.x) / dCentro, y: (geometria.cy - posicion.y) / dCentro };
+  const dir = normalizarVector(
+    movimiento.dir.x + haciaCentro.x * peso,
+    movimiento.dir.y + haciaCentro.y * peso,
+  );
+  return { ...movimiento, dir };
+}
+
+// Decide hacia donde y a que fraccion de su velocidad se mueve un campeon en
+// este tick. Devuelve { dir, factor, tope? } (tope = avance maximo en px).
+function decidirMovimiento(campeon, oponente, estado, deltaTiempo) {
+  const ia = campeon.ia;
+  const geometria = geometriaArena(estado.arena);
+
+  const dx = oponente.posicion.x - campeon.posicion.x;
+  const dy = oponente.posicion.y - campeon.posicion.y;
+  const distancia = Math.hypot(dx, dy);
+  // Direccion hacia el rival (si estan superpuestos, una direccion fija).
+  const u = distancia > 1e-9 ? { x: dx / distancia, y: dy / distancia } : { x: 1, y: 0 };
+  // Direccion tangente: sentido en que orbita alrededor del rival.
+  const t = { x: -u.y * ia.sentido, y: u.x * ia.sentido };
+
+  const enRetroceso = ia.retroceso > 0;
+  if (enRetroceso) {
+    ia.retroceso = Math.max(0, ia.retroceso - deltaTiempo);
+  }
+
+  // 1. Vida baja con curacion: huye hacia el borde opuesto al rival.
+  if (debeHuir(campeon)) {
+    const ox = geometria.cx - oponente.posicion.x;
+    const oy = geometria.cy - oponente.posicion.y;
+    const magnitud = Math.hypot(ox, oy);
+    const lejos = magnitud < 1e-6
+      ? { x: -u.x, y: -u.y }
+      : { x: ox / magnitud, y: oy / magnitud };
+    const objetivo = {
+      x: geometria.cx + lejos.x * geometria.radio * 0.9,
+      y: geometria.cy + lejos.y * geometria.radio * 0.9,
+    };
+    const hacia = Math.hypot(objetivo.x - campeon.posicion.x, objetivo.y - campeon.posicion.y);
+    if (hacia > 25) {
+      return {
+        dir: normalizarVector(objetivo.x - campeon.posicion.x, objetivo.y - campeon.posicion.y),
+        factor: 1,
+      };
+    }
+    // Ya esta en el borde opuesto: se mueve de lado para no quedarse quieto.
+    return { dir: t, factor: 0.6 };
+  }
+
+  // 2. Campeon a distancia (proyectil / area_de_dano).
+  if (esADistancia(campeon)) {
+    const habilidades = campeon.habilidades;
+    const tieneProyectil = habilidades.includes('proyectil');
+    // Area pura: se acerca a lanzar el area cuando esta lista y luego se aleja.
+    if (!tieneProyectil && habilidadDisponible(campeon, 'area_de_dano')) {
+      if (distancia > DISTANCIA_LANZAR_AREA) {
+        return {
+          dir: normalizarVector(u.x + t.x * 0.25, u.y + t.y * 0.25),
+          factor: 1,
+          tope: distancia - DISTANCIA_LANZAR_AREA,
+        };
+      }
+      return { dir: t, factor: 0.5 };
+    }
+    // Con proyectil listo mantiene 200-260 px; sin habilidades listas orbita a
+    // distancia media.
+    const listo = tieneProyectil && habilidadDisponible(campeon, 'proyectil');
+    const mov = listo
+      ? mantenerDistancia(u, t, distancia, DISTANCIA_BANDA_MIN, DISTANCIA_BANDA_MAX)
+      : mantenerDistancia(u, t, distancia, DISTANCIA_MEDIA_MIN, DISTANCIA_MEDIA_MAX);
+    return alejarDelBorde(mov, campeon.posicion, geometria);
+  }
+
+  // 3. Cuerpo a cuerpo.
+  if (enRetroceso) {
+    // Tras golpear: retrocede (0) o gira alrededor del rival (1).
+    let mov;
+    if (ia.modoRetroceso === 0) {
+      mov = distancia < DISTANCIA_RETROCESO
+        ? { dir: normalizarVector(-u.x + t.x * 0.35, -u.y + t.y * 0.35), factor: 1 }
+        : { dir: t, factor: 0.7 };
+    } else {
+      const radial = acotar((distancia - DISTANCIA_GIRO) / 40, -1, 1) * 0.8;
+      mov = { dir: normalizarVector(t.x + u.x * radial, t.y + u.y * radial), factor: 0.9 };
+    }
+    return alejarDelBorde(mov, campeon.posicion, geometria);
+  }
+  if (distancia > DISTANCIA_CUERPO_A_CUERPO) {
+    // Persigue al rival con una ligera curva.
+    return {
+      dir: normalizarVector(u.x + t.x * 0.2, u.y + t.y * 0.2),
+      factor: 1,
+      tope: distancia - DISTANCIA_CUERPO_A_CUERPO,
+    };
+  }
+  return { dir: t, factor: 0.35 };
+}
+
+// Prepara la embestida: una ruta de dos tramos que rodea al rival (sin pisarlo)
+// y termina del otro lado de el. Devuelve el punto final de la ruta.
+function iniciarEmbestida(atacante, oponente, arena) {
+  const ia = atacante.ia;
+  const dx = oponente.posicion.x - atacante.posicion.x;
+  const dy = oponente.posicion.y - atacante.posicion.y;
+  const hacia = normalizarVector(dx, dy);
+  const u = hacia.x === 0 && hacia.y === 0 ? { x: 1, y: 0 } : hacia;
+  const t = { x: -u.y * ia.sentido, y: u.x * ia.sentido };
+  const lateral = limitarALaArena(
+    {
+      x: oponente.posicion.x + t.x * DISTANCIA_EMBESTIDA,
+      y: oponente.posicion.y + t.y * DISTANCIA_EMBESTIDA,
+    },
+    arena,
+  );
+  const destino = limitarALaArena(
+    {
+      x: oponente.posicion.x + u.x * DISTANCIA_EMBESTIDA,
+      y: oponente.posicion.y + u.y * DISTANCIA_EMBESTIDA,
+    },
+    arena,
+  );
+  ia.embestida = { puntos: [lateral, destino] };
+  return destino;
+}
+
+// Avanza la embestida en curso a velocidad alta a lo largo de su ruta.
+function avanzarEmbestida(campeon, deltaTiempo, arena) {
+  const embestida = campeon.ia.embestida;
+  let restante = campeon.estadisticas.velocidad * FACTOR_VELOCIDAD_EMBESTIDA * deltaTiempo;
+  let { x, y } = campeon.posicion;
+  while (restante > 1e-9 && embestida.puntos.length > 0) {
+    const punto = embestida.puntos[0];
+    const distancia = Math.hypot(punto.x - x, punto.y - y);
+    if (distancia <= restante) {
+      x = punto.x;
+      y = punto.y;
+      restante -= distancia;
+      embestida.puntos.shift();
+    } else {
+      x += ((punto.x - x) / distancia) * restante;
+      y += ((punto.y - y) / distancia) * restante;
+      restante = 0;
+    }
+  }
+  if (embestida.puntos.length === 0) {
+    campeon.ia.embestida = null;
+  }
+  campeon.posicion = limitarALaArena({ x, y }, arena);
+}
+
+// Mueve un campeon un tick segun su comportamiento (embestida en curso, huida,
+// kiting a distancia o persecucion cuerpo a cuerpo). Muta 'campeon'.
+function moverCampeonIA(campeon, oponente, estado, deltaTiempo) {
+  if (campeon.ia.embestida) {
+    avanzarEmbestida(campeon, deltaTiempo, estado.arena);
+    return;
+  }
+  const mov = decidirMovimiento(campeon, oponente, estado, deltaTiempo);
+  if (!mov || (mov.dir.x === 0 && mov.dir.y === 0)) {
+    return;
+  }
+  let paso = campeon.estadisticas.velocidad * mov.factor * deltaTiempo;
+  if (typeof mov.tope === 'number') {
+    paso = Math.min(paso, Math.max(0, mov.tope));
+  }
+  campeon.posicion = limitarALaArena(
+    {
+      x: campeon.posicion.x + mov.dir.x * paso,
+      y: campeon.posicion.y + mov.dir.y * paso,
+    },
+    estado.arena,
+  );
+}
+
+// Garantiza la distancia minima (DISTANCIA_MINIMA) entre los dos campeones sin
+// sacarlos del circulo de combate. Muta las posiciones de 'a' y 'b'.
+function separarCampeones(a, b, arena) {
+  for (let i = 0; i < 4; i++) {
+    const dx = b.posicion.x - a.posicion.x;
+    const dy = b.posicion.y - a.posicion.y;
+    const distancia = Math.hypot(dx, dy);
+    if (distancia >= DISTANCIA_MINIMA) {
+      return;
+    }
+    const n = distancia > 1e-9 ? { x: dx / distancia, y: dy / distancia } : { x: 1, y: 0 };
+    const mitad = (DISTANCIA_MINIMA - distancia) / 2 + 1e-6;
+    a.posicion = limitarALaArena(
+      { x: a.posicion.x - n.x * mitad, y: a.posicion.y - n.y * mitad },
+      arena,
+    );
+    b.posicion = limitarALaArena(
+      { x: b.posicion.x + n.x * mitad, y: b.posicion.y + n.y * mitad },
+      arena,
+    );
+  }
+  if (Math.hypot(b.posicion.x - a.posicion.x, b.posicion.y - a.posicion.y) >= DISTANCIA_MINIMA) {
+    return;
+  }
+  // Caso extremo (ambos contra el borde): el mas cercano al centro se coloca a
+  // 51 px del otro, en direccion al centro de la arena (siempre dentro del circulo).
+  const { cx, cy } = geometriaArena(arena);
+  const dA = Math.hypot(a.posicion.x - cx, a.posicion.y - cy);
+  const dB = Math.hypot(b.posicion.x - cx, b.posicion.y - cy);
+  const [movil, fijo] = dA <= dB ? [a, b] : [b, a];
+  const haciaCentro = normalizarVector(cx - fijo.posicion.x, cy - fijo.posicion.y);
+  const dir = haciaCentro.x === 0 && haciaCentro.y === 0 ? { x: 1, y: 0 } : haciaCentro;
+  movil.posicion = limitarALaArena(
+    { x: fijo.posicion.x + dir.x * (DISTANCIA_MINIMA + 1), y: fijo.posicion.y + dir.y * (DISTANCIA_MINIMA + 1) },
+    arena,
+  );
+}
 // Reduce todos los enfriamientos del campeon en 'deltaTiempo' segundos, sin
 // bajar de 0. Tambien descuenta la duracion del escudo activo y lo desactiva
 // cuando el tiempo se agota. La duracion y los enfriamientos se manejan en
@@ -478,9 +847,10 @@ function clonarCampeon(campeon) {
     ...campeon,
     posicion: { x: campeon.posicion.x, y: campeon.posicion.y },
     enfriamientos: { ...campeon.enfriamientos },
+    ia: campeon.ia ? clonarIA(campeon.ia) : undefined,
+    movimiento: campeon.movimiento ? { x: campeon.movimiento.x, y: campeon.movimiento.y } : { x: 0, y: 0 },
   };
 }
-
 // Aplica una cura al campeon sin exceder su vida maxima. Devuelve la cantidad
 // efectivamente recuperada (para el detalle del evento).
 function curar(campeon) {
@@ -503,7 +873,7 @@ function tipoEventoAtaque(habilidad) {
 // Aplica el efecto (dano, escudo o curacion), pone la habilidad en enfriamiento,
 // respeta los limites de vida [0, vidaMaxima] y registra el evento resultante en
 // el arreglo 'eventos'. No hace nada si 'habilidad' es null.
-function ejecutarHabilidad(atacante, oponente, habilidad, eventos, rng) {
+function ejecutarHabilidad(atacante, oponente, habilidad, eventos, rng, arena) {
   if (!habilidad) {
     return;
   }
@@ -565,6 +935,16 @@ function ejecutarHabilidad(atacante, oponente, habilidad, eventos, rng) {
   if (esCritico) {
     evento.critico = true;
   }
+
+  // Embestida: el campeon atraviesa al rival y termina del otro lado. El evento
+  // lleva el punto final (coordenadas de la arena) para el efecto visual.
+  if (habilidad === 'embestida') {
+    evento.destino = iniciarEmbestida(atacante, oponente, arena);
+  }
+  // Tras golpear cuerpo a cuerpo, el campeon se aparta un momento.
+  if (!esADistancia(atacante) && (habilidad === 'ataque_basico' || habilidad === 'embestida')) {
+    iniciarRetroceso(atacante, rng);
+  }
   eventos.push(evento);
 }
 
@@ -600,32 +980,47 @@ export function actualizarTick(estado, deltaTiempo) {
   avanzarTemporizadores(a, deltaTiempo);
   avanzarTemporizadores(b, deltaTiempo);
 
-  // 3. Movimiento: cada campeon avanza hacia el oponente, pero se detiene al
-  //    entrar en el rango de la habilidad que podra usar. Nunca se encima: si ya
-  //    esta dentro del rango de detencion, no se mueve (asi la distancia > 0).
-  const distanciaActual = distanciaEntre(a, b);
-
-  const rangoA = rangoDeDetencion(a);
-  if (distanciaActual > rangoA) {
-    a.posicion = moverHastaRango(a, b, deltaTiempo, nuevoEstado.arena, rangoA);
+  // 3. Movimiento por toda la arena (circulo de radio ~280). Cada campeon se
+  //    posiciona segun su tipo (a distancia, cuerpo a cuerpo, huida, embestida)
+  //    y despues se garantiza la distancia minima entre ambos. Toda la
+  //    aleatoriedad sale del RNG del estado (A antes que B, orden fijo).
+  if (!a.ia) {
+    a.ia = crearIA(nuevoEstado.rng);
   }
-
-  const rangoB = rangoDeDetencion(b);
-  // Recalcula la distancia por si A ya se movio en este tick.
-  if (distanciaEntre(a, b) > rangoB) {
-    b.posicion = moverHastaRango(b, a, deltaTiempo, nuevoEstado.arena, rangoB);
+  if (!b.ia) {
+    b.ia = crearIA(nuevoEstado.rng);
   }
+  avanzarIA(a, deltaTiempo, nuevoEstado.rng);
+  avanzarIA(b, deltaTiempo, nuevoEstado.rng);
 
+  const previaA = { x: a.posicion.x, y: a.posicion.y };
+  const previaB = { x: b.posicion.x, y: b.posicion.y };
+
+  moverCampeonIA(a, b, nuevoEstado, deltaTiempo);
+  moverCampeonIA(b, a, nuevoEstado, deltaTiempo);
+  separarCampeones(a, b, nuevoEstado.arena);
+
+  // Velocidad real (px/s) del tick: la escena la usa para inclinar el retrato.
+  if (deltaTiempo > 0) {
+    a.movimiento = {
+      x: (a.posicion.x - previaA.x) / deltaTiempo,
+      y: (a.posicion.y - previaA.y) / deltaTiempo,
+    };
+    b.movimiento = {
+      x: (b.posicion.x - previaB.x) / deltaTiempo,
+      y: (b.posicion.y - previaB.y) / deltaTiempo,
+    };
+  }
   // 4. Seleccion y ejecucion de habilidades (A actua primero, luego B). El RNG
   //    del estado se pasa para la variacion/critico de cada golpe ofensivo; el
   //    orden fijo A -> B preserva el determinismo con semilla.
   const habilidadA = seleccionarHabilidad(a, nuevoEstado);
-  ejecutarHabilidad(a, b, habilidadA, eventos, nuevoEstado.rng);
+  ejecutarHabilidad(a, b, habilidadA, eventos, nuevoEstado.rng, nuevoEstado.arena);
 
   // B solo actua si sigue con vida tras el ataque de A.
   if (b.hp > 0) {
     const habilidadB = seleccionarHabilidad(b, nuevoEstado);
-    ejecutarHabilidad(b, a, habilidadB, eventos, nuevoEstado.rng);
+    ejecutarHabilidad(b, a, habilidadB, eventos, nuevoEstado.rng, nuevoEstado.arena);
   }
 
   // 5. Red de seguridad: garantiza la invariante de vida en [0, vidaMaxima].
@@ -633,32 +1028,6 @@ export function actualizarTick(estado, deltaTiempo) {
   b.hp = Math.min(b.vidaMaxima, Math.max(0, b.hp));
 
   return { estado: nuevoEstado, eventos };
-}
-
-// Mueve un campeon hacia su objetivo pero sin acercarse mas alla de 'rango'
-// pixeles: si el paso calculado lo llevaria dentro del rango, se detiene justo
-// en el borde del rango. Asi el campeon nunca se encima sobre el oponente
-// (distancia 0) y respeta el rango de la habilidad que usara. Devuelve la nueva
-// posicion {x, y} limitada a la arena.
-function moverHastaRango(campeon, objetivo, deltaTiempo, arena, rango) {
-  const direccion = normalizarDireccion(campeon.posicion, objetivo.posicion);
-  // Si no hay direccion valida (misma posicion), no se mueve.
-  if (direccion.x === 0 && direccion.y === 0) {
-    return { x: campeon.posicion.x, y: campeon.posicion.y };
-  }
-
-  const distanciaActual = distanciaEntre(campeon, objetivo);
-  const pasoDeseado = campeon.estadisticas.velocidad * deltaTiempo;
-  // Nunca avanzar mas que (distanciaActual - rango): eso deja al campeon justo
-  // en el borde del rango, nunca encimado sobre el oponente.
-  const avanceMaximo = Math.max(0, distanciaActual - rango);
-  const paso = Math.min(pasoDeseado, avanceMaximo);
-
-  const nuevaPosicion = {
-    x: campeon.posicion.x + direccion.x * paso,
-    y: campeon.posicion.y + direccion.y * paso,
-  };
-  return limitarALaArena(nuevaPosicion, arena);
 }
 
 // ---------------------------------------------------------------------------

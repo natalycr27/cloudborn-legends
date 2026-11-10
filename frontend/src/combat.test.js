@@ -17,7 +17,11 @@ import {
   determinarGanador,
   determinarGanadorPorVida,
   simularCombate,
+  actualizarTick,
   DURACION_MAXIMA,
+  PASO_FIJO,
+  RADIO_ARENA,
+  DISTANCIA_MINIMA,
 } from './combat.js';
 
 // --------------------------------------------------------------------------
@@ -164,5 +168,145 @@ describe('Requisito 7.6: desenlace por tiempo agotado a los 90 s segun porcentaj
 
     expect(desenlace.resultado).toBe('empate');
     expect(desenlace.idGanador).toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------------
+// Movimiento por toda la arena (circulo de radio 280 centrado en 400,300)
+// --------------------------------------------------------------------------
+
+describe('Movimiento por la arena', () => {
+  const combinaciones = [
+    [['proyectil', 'escudo'], ['embestida', 'curacion']],
+    [['area_de_dano', 'curacion'], ['proyectil', 'embestida']],
+    [['embestida', 'escudo'], ['embestida', 'curacion']],
+    [['proyectil', 'area_de_dano', 'curacion'], ['area_de_dano', 'escudo']],
+  ];
+
+  // Los campeones nunca salen del circulo y nunca se encimaran (>= 50 px).
+  it('mantiene a los campeones dentro del circulo y a mas de 50 px entre si', () => {
+    for (const [habA, habB] of combinaciones) {
+      for (let semilla = 1; semilla <= 5; semilla++) {
+        let estado = crearCombate(
+          crearCampeon('A', { habilidades: habA, velocidad: 200 + semilla * 40 }),
+          crearCampeon('B', { habilidades: habB, velocidad: 440 - semilla * 40 }),
+          null,
+          semilla,
+        );
+        for (let i = 0; i < 20 * 40; i++) {
+          estado = actualizarTick(estado, PASO_FIJO).estado;
+          for (const c of [estado.campeonA, estado.campeonB]) {
+            const r = Math.hypot(c.posicion.x - 400, c.posicion.y - 300);
+            expect(r).toBeLessThanOrEqual(RADIO_ARENA + 1e-6);
+          }
+          const d = Math.hypot(
+            estado.campeonA.posicion.x - estado.campeonB.posicion.x,
+            estado.campeonA.posicion.y - estado.campeonB.posicion.y,
+          );
+          expect(d).toBeGreaterThanOrEqual(DISTANCIA_MINIMA - 1e-6);
+          if (estado.campeonA.hp <= 0 || estado.campeonB.hp <= 0) break;
+        }
+      }
+    }
+  });
+
+  // Con la misma semilla el combate es identico y nunca se usa Math.random().
+  it('es determinista con semilla y no usa Math.random()', () => {
+    const original = Math.random;
+    Math.random = () => {
+      throw new Error('Math.random no debe usarse en combat.js');
+    };
+    try {
+      const a = crearCampeon('A', { habilidades: ['proyectil', 'curacion'] });
+      const b = crearCampeon('B', { habilidades: ['embestida', 'escudo'] });
+      const x = simularCombate(a, b, null, 42);
+      const y = simularCombate(a, b, null, 42);
+      expect(y.estadoFinal.campeonA.posicion).toEqual(x.estadoFinal.campeonA.posicion);
+      expect(y.estadoFinal.campeonB.posicion).toEqual(x.estadoFinal.campeonB.posicion);
+      expect(y.estadoFinal.tiempoTranscurrido).toBe(x.estadoFinal.tiempoTranscurrido);
+    } finally {
+      Math.random = original;
+    }
+  });
+
+  // Un campeon a distancia se queda entre 200 y 260 px del rival mientras espera.
+  it('un campeon a distancia se mantiene cerca de los 200-260 px del rival', () => {
+    let estado = crearCombate(
+      crearCampeon('A', { habilidades: ['proyectil'], velocidad: 300 }),
+      crearCampeon('B', { habilidades: ['proyectil'], velocidad: 300 }),
+      null,
+      3,
+    );
+    const distancias = [];
+    for (let i = 0; i < 20 * 6; i++) {
+      estado = actualizarTick(estado, PASO_FIJO).estado;
+      if (i > 20 * 2) {
+        distancias.push(
+          Math.hypot(
+            estado.campeonA.posicion.x - estado.campeonB.posicion.x,
+            estado.campeonA.posicion.y - estado.campeonB.posicion.y,
+          ),
+        );
+      }
+    }
+    const promedio = distancias.reduce((x, y) => x + y, 0) / distancias.length;
+    expect(promedio).toBeGreaterThan(190);
+    expect(promedio).toBeLessThan(270);
+  });
+
+  // Tras una embestida, el campeon termina del otro lado del rival.
+  it('despues de una embestida el campeon queda del otro lado del rival', () => {
+    // El rival casi no se mueve para poder comparar los lados con claridad.
+    let estado = crearCombate(
+      crearCampeon('A', { habilidades: ['embestida'], velocidad: 300 }),
+      crearCampeon('B', { habilidades: ['escudo'], velocidad: 1 }),
+      null,
+      5,
+    );
+    let direccionInicial = null;
+    let embistio = false;
+    for (let i = 0; i < 20 * 15 && !embistio; i++) {
+      const antes = estado;
+      const paso = actualizarTick(estado, PASO_FIJO);
+      estado = paso.estado;
+      if (paso.eventos.some((e) => e.tipo === 'embestida' && e.campeon === 'A')) {
+        embistio = true;
+        const dx = antes.campeonB.posicion.x - antes.campeonA.posicion.x;
+        const dy = antes.campeonB.posicion.y - antes.campeonA.posicion.y;
+        const m = Math.hypot(dx, dy);
+        direccionInicial = { x: dx / m, y: dy / m };
+      }
+    }
+    expect(embistio).toBe(true);
+    // Deja terminar la embestida (dura menos de 1 s) y mide justo al terminar.
+    for (let i = 0; i < 20 && estado.campeonA.ia.embestida; i++) {
+      estado = actualizarTick(estado, PASO_FIJO).estado;
+    }
+    expect(estado.campeonA.ia.embestida).toBeNull();
+    const relX = estado.campeonA.posicion.x - estado.campeonB.posicion.x;
+    const relY = estado.campeonA.posicion.y - estado.campeonB.posicion.y;
+    expect(relX * direccionInicial.x + relY * direccionInicial.y).toBeGreaterThan(0);
+  });
+
+  // Con vida < 35% y curacion, el campeon se aleja del rival.
+  it('con vida baja y curacion se aleja del rival', () => {
+    let estado = crearCombate(
+      crearCampeon('A', { habilidades: ['curacion'], velocidad: 300 }),
+      crearCampeon('B', { habilidades: ['escudo'], velocidad: 1 }),
+      null,
+      9,
+    );
+    estado.campeonA.hp = estado.campeonA.vidaMaxima * 0.2;
+    estado.campeonA.posicion = { x: 330, y: 300 };
+    estado.campeonB.posicion = { x: 400, y: 300 };
+    const distanciaInicial = 70;
+    for (let i = 0; i < 20; i++) {
+      estado = actualizarTick(estado, PASO_FIJO).estado;
+    }
+    const d = Math.hypot(
+      estado.campeonA.posicion.x - estado.campeonB.posicion.x,
+      estado.campeonA.posicion.y - estado.campeonB.posicion.y,
+    );
+    expect(d).toBeGreaterThan(distanciaInicial + 100);
   });
 });

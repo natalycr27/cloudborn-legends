@@ -46,8 +46,9 @@ import {
   actualizarTick,
   determinarGanador,
   ARENA_POR_DEFECTO,
+  RADIO_ARENA,
   PASO_FIJO,
-} from "../src/combat.js";
+} from "../src/combat.js?v=2";
 import { API_URL } from "../src/main.js";
 import {
   REGISTRY_ARENA,
@@ -86,6 +87,21 @@ const COLOR_VIDA_BAJA = 0xff6b6b; // relleno de vida baja
 // Radio en pixeles (en coordenadas logicas 800x600) del circulo de cada campeon.
 const RADIO_CAMPEON = 30;
 
+// Zona de lucha de la imagen de fondo generada (arena circular vista desde
+// arriba): el suelo despejado ocupa ~42% del lado menor de la imagen, medido
+// desde su centro. El circulo de combate (radio 280) se estira para cubrir ese
+// suelo, recortado a lo que se ve en pantalla (HUD y bordes del canvas).
+const FRACCION_SUELO_IMAGEN = 0.42;
+// Margen (px de pantalla) entre la zona de combate y el borde del canvas.
+const MARGEN_ZONA_COMBATE = 12;
+
+// Inclinacion del retrato al moverse rapido (px/s logicos de la arena).
+const VELOCIDAD_INCLINACION_MIN = 150; // por debajo no se inclina
+const VELOCIDAD_INCLINACION_MAX = 400; // inclinacion maxima
+const INCLINACION_MAXIMA = 0.3; // radianes (~17 grados)
+// Distancia de "lean" hacia delante (fraccion del radio) a maxima velocidad.
+const EMPUJE_INCLINACION = 0.14;
+
 export default class ArenaScene extends Phaser.Scene {
   // Registra la escena con la clave "ArenaScene" usada por main.js.
   constructor() {
@@ -97,6 +113,7 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Estado de combate (combat.js) y control del loop de paso fijo.
     this.estadoCombate = null;
+    this.estadoPrevio = null; // estado del tick anterior (interpolacion visual)
     this.acumulador = 0;
     this.resultado = null; // 'ganador' | 'empate' | null (en curso)
     this.idGanador = null;
@@ -106,6 +123,10 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Factores de escala de la arena logica (800x600) al canvas real.
     this.escala = 1;
+    this.escalaX = 1; // escala horizontal (la elipse de combate puede ser distinta de la vertical)
+    this.escalaY = 1;
+    this.radioX = 0; // semiejes de la zona de combate en pantalla
+    this.radioY = 0;
     this.offsetX = 0;
     this.offsetY = 0;
     this.centroX = 0; // centro del piso circular en pantalla
@@ -154,6 +175,7 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Reinicia el estado por si la escena se reutiliza entre combates.
     this.estadoCombate = null;
+    this.estadoPrevio = null; // estado del tick anterior (interpolacion visual)
     this.acumulador = 0;
     this.resultado = null;
     this.idGanador = null;
@@ -185,6 +207,7 @@ export default class ArenaScene extends Phaser.Scene {
     // Semilla aleatoria: combate reproducible dentro de la sesion.
     const semilla = Math.floor(Math.random() * 0xffffffff);
     this.estadoCombate = crearCombate(this.campeonA, this.campeonB, ARENA_POR_DEFECTO, semilla);
+    this.estadoPrevio = this.estadoCombate;
 
     // Genera las texturas de particulas (puntos suaves) una sola vez.
     this.generarTexturasParticulas();
@@ -509,6 +532,8 @@ export default class ArenaScene extends Phaser.Scene {
     // asi ocupa todo el ancho en vertical y todo el alto disponible en horizontal.
     this.escala = Math.min(anchoDisponible / anchoLogico, altoDisponible / altoLogico);
 
+    this.escalaX = this.escala;
+    this.escalaY = this.escala;
     const anchoArena = anchoLogico * this.escala;
     const altoArena = altoLogico * this.escala;
     this.offsetX = (width - anchoArena) / 2;
@@ -519,18 +544,73 @@ export default class ArenaScene extends Phaser.Scene {
     this.centroY = this.aPantallaY(altoLogico / 2);
     // El radio del piso ocupa casi todo el alto logico disponible.
     this.radioArena = (altoLogico / 2) * this.escala * 0.98;
+    this.escalaX = this.escala;
+    this.escalaY = this.escala;
+    this.radioX = this.radioArena;
+    this.radioY = this.radioArena;
+
+    // Con imagen de fondo, el circulo de combate (radio RADIO_ARENA) se convierte
+    // en una elipse que cubre toda la zona de lucha visible de la imagen, tanto en
+    // horizontal (computadora) como en vertical (celular).
+    const zona = this.calcularZonaCombateImagen(margenSuperior);
+    if (zona) {
+      this.escalaX = zona.radioX / RADIO_ARENA;
+      this.escalaY = zona.radioY / RADIO_ARENA;
+      // Los tamanos (fichas, efectos) usan la escala menor para no deformarse.
+      this.escala = Math.min(this.escalaX, this.escalaY);
+      this.centroX = zona.cx;
+      this.centroY = zona.cy;
+      this.radioX = zona.radioX;
+      this.radioY = zona.radioY;
+      this.radioArena = Math.min(zona.radioX, zona.radioY);
+      this.offsetX = zona.cx - (anchoLogico / 2) * this.escalaX;
+      this.offsetY = zona.cy - (altoLogico / 2) * this.escalaY;
+    }
+  }
+
+  // Indica si hay una imagen de fondo cargada para la arena.
+  hayFondoImagen() {
+    return Boolean(this.claveFondoArena && this.textures.exists(this.claveFondoArena));
+  }
+
+  // Calcula la zona de combate sobre la imagen de fondo (escalada tipo "cover",
+  // centrada en el canvas): un elipse centrado en el suelo de la arena y acotado
+  // a la parte visible del canvas por debajo del HUD. Devuelve null sin imagen.
+  calcularZonaCombateImagen(margenSuperior) {
+    if (!this.hayFondoImagen()) {
+      return null;
+    }
+    const { width, height } = this.scale;
+    const origen = this.textures.get(this.claveFondoArena).getSourceImage();
+    if (!origen || !origen.width || !origen.height) {
+      return null;
+    }
+
+    // Mismo "cover" que dibujarFondoImagen: la imagen llena el canvas centrada.
+    const escalaCover = Math.max(width / origen.width, height / origen.height);
+    const radioSuelo = Math.min(origen.width, origen.height) * escalaCover * FRACCION_SUELO_IMAGEN;
+
+    // Zona visible util: bajo el HUD y dentro de los bordes del canvas.
+    const arriba = margenSuperior + MARGEN_ZONA_COMBATE;
+    const abajo = height - MARGEN_ZONA_COMBATE;
+    const radioX = Math.max(1, Math.min(radioSuelo, width / 2 - MARGEN_ZONA_COMBATE));
+    const radioY = Math.max(1, Math.min(radioSuelo, (abajo - arriba) / 2));
+
+    // El suelo esta centrado en el canvas; se desplaza lo minimo para no tapar el HUD.
+    const cx = width / 2;
+    const cy = Math.min(Math.max(height / 2, arriba + radioY), abajo - radioY);
+    return { cx, cy, radioX, radioY };
   }
 
   // Convierte una coordenada X de la arena logica (0..800) al canvas real.
   aPantallaX(xLogica) {
-    return this.offsetX + xLogica * this.escala;
+    return this.offsetX + xLogica * this.escalaX;
   }
 
   // Convierte una coordenada Y de la arena logica (0..600) al canvas real.
   aPantallaY(yLogica) {
-    return this.offsetY + yLogica * this.escala;
+    return this.offsetY + yLogica * this.escalaY;
   }
-
   // -------------------------------------------------------------------------
   // Texturas de particulas generadas en tiempo de ejecucion (sin imagenes)
   // -------------------------------------------------------------------------
@@ -601,7 +681,8 @@ export default class ArenaScene extends Phaser.Scene {
 
     const aro = this.add.graphics().setDepth(3);
     aro.lineStyle(Math.max(2, 3 * this.escala), 0xffffff, 0.18);
-    aro.strokeCircle(this.centroX, this.centroY, this.radioArena);
+    // La zona de combate es una elipse (circulo de radio 280 estirado a la zona de lucha).
+    aro.strokeEllipse(this.centroX, this.centroY, this.radioX * 2, this.radioY * 2);
   }
 
   // Gradas: anillo oscuro alrededor del piso con el publico como puntos que
@@ -883,6 +964,7 @@ export default class ArenaScene extends Phaser.Scene {
       anchoVida,
       radio,
       colorPrincipal,
+      claveTextura,
       esRetrato: true,
     };
   }
@@ -1086,6 +1168,7 @@ export default class ArenaScene extends Phaser.Scene {
 
       while (this.acumulador >= PASO_FIJO && !this.combateTerminado()) {
         const paso = actualizarTick(this.estadoCombate, PASO_FIJO);
+        this.estadoPrevio = this.estadoCombate;
         this.estadoCombate = paso.estado;
 
         // Acumula los eventos del tick para la narracion (8.4c).
@@ -1152,7 +1235,7 @@ export default class ArenaScene extends Phaser.Scene {
         case "ataque":
         default:
           // El proyectil se distingue por el inicio de su detalle.
-          if (typeof ev.detalle === "string" && ev.detalle.startsWith("proyectil") && posAtacante && posObjetivo) {
+          if (this.esDisparo(ev, posAtacante, posObjetivo)) {
             this.efectoProyectil(posAtacante, posObjetivo, atacante);
           }
           this.impactoDano(ev, posObjetivo);
@@ -1164,6 +1247,19 @@ export default class ArenaScene extends Phaser.Scene {
         this.cameras.main.shake(180, 0.012);
       }
     }
+  }
+
+  // Un evento "ataque" es un disparo visible si es un proyectil o un ataque basico
+  // lanzado a distancia (los campeones a distancia atacan desde ~200-260 px).
+  esDisparo(ev, posAtacante, posObjetivo) {
+    if (typeof ev.detalle !== "string" || !posAtacante || !posObjetivo) {
+      return false;
+    }
+    if (ev.detalle.startsWith("proyectil")) {
+      return true;
+    }
+    const lejos = Math.hypot(posObjetivo.x - posAtacante.x, posObjetivo.y - posAtacante.y) > 110 * this.escala;
+    return ev.detalle.startsWith("ataque basico") && lejos;
   }
 
   // Dispara la animacion de impacto en el objetivo (parpadeo blanco + retroceso)
@@ -1294,30 +1390,14 @@ export default class ArenaScene extends Phaser.Scene {
     });
   }
 
-  // Embestida: dash con rastro. Se dibuja una linea/trazo del atacante hacia el
-  // objetivo que se desvanece, mas un emisor de rastro breve en el origen.
+  // Embestida: la estela del campeon la dibujan los fantasmas que deja mientras
+  // atraviesa al rival (ver dejarEstela); aqui solo se lanza el estallido de
+  // arranque con particulas en el punto de partida.
   efectoEmbestida(origen, destino, spriteAtacante) {
     const color = spriteAtacante ? spriteAtacante.colorPrincipal : 0xffffff;
 
-    // Trazo del dash (linea gruesa que se desvanece).
-    const trazo = this.add.graphics().setDepth(7).setBlendMode(Phaser.BlendModes.ADD);
-    trazo.lineStyle(Math.max(4, 6 * this.escala), color, 0.8);
-    trazo.beginPath();
-    trazo.moveTo(origen.x, origen.y);
-    trazo.lineTo(destino.x, destino.y);
-    trazo.strokePath();
-    this.tweens.add({
-      targets: trazo,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => trazo.destroy(),
-    });
-
-    // Rastro de particulas a lo largo del recorrido.
-    const rastro = this.add.particles(0, 0, "particula-punto", {
-      x: { min: Math.min(origen.x, destino.x), max: Math.max(origen.x, destino.x) },
-      y: { min: Math.min(origen.y, destino.y), max: Math.max(origen.y, destino.y) },
-      speed: 0,
+    const rastro = this.add.particles(origen.x, origen.y, "particula-punto", {
+      speed: { min: 30 * this.escala, max: 110 * this.escala },
       scale: { start: 1.2 * this.escala, end: 0 },
       alpha: { start: 0.7, end: 0 },
       lifespan: 260,
@@ -1887,13 +1967,26 @@ export default class ArenaScene extends Phaser.Scene {
       return;
     }
 
-    this.actualizarSprite(this.sprites.A, this.estadoCombate.campeonA);
-    this.actualizarSprite(this.sprites.B, this.estadoCombate.campeonB);
+    // Interpola entre el tick anterior y el actual para que el movimiento por la
+    // arena se vea fluido aunque la simulacion corra a 20 ticks por segundo.
+    const alfa = this.factorInterpolacion();
+    const previo = this.estadoPrevio || this.estadoCombate;
+
+    this.actualizarSprite(this.sprites.A, this.estadoCombate.campeonA, previo.campeonA, alfa);
+    this.actualizarSprite(this.sprites.B, this.estadoCombate.campeonB, previo.campeonB, alfa);
 
     this.actualizarBarraHud(this.hud.A, this.estadoCombate.campeonA);
     this.actualizarBarraHud(this.hud.B, this.estadoCombate.campeonB);
 
     this.actualizarTemporizador();
+  }
+
+  // Fraccion (0..1) del paso fijo ya acumulada: sirve para interpolar posiciones.
+  factorInterpolacion() {
+    if (this.combateTerminado()) {
+      return 1;
+    }
+    return Math.max(0, Math.min(1, this.acumulador / PASO_FIJO));
   }
 
   // Posicion en pantalla del centro de un campeon (sin offset de retroceso).
@@ -1904,23 +1997,62 @@ export default class ArenaScene extends Phaser.Scene {
     };
   }
 
+  // Posicion en pantalla interpolada entre el tick anterior y el actual.
+  posInterpolada(campeon, previo, alfa) {
+    const a = this.posEnPantalla(previo || campeon);
+    const b = this.posEnPantalla(campeon);
+    return { x: a.x + (b.x - a.x) * alfa, y: a.y + (b.y - a.y) * alfa };
+  }
+
   // Reposiciona sombra, aura, cuerpo y burbuja de escudo de un campeon, sumando
   // el pequeno offset de retroceso cuando esta activo. Muestra la burbuja de
-  // escudo mientras escudoActivo sea verdadero en el estado de combate.
-  actualizarSprite(sprite, campeon) {
+  // escudo mientras escudoActivo sea verdadero en el estado de combate. Ademas
+  // inclina el retrato en la direccion del movimiento cuando se mueve rapido y
+  // deja una estela breve durante la embestida.
+  actualizarSprite(sprite, campeon, previo, alfa = 1) {
     if (!sprite) {
       return;
     }
 
-    const base = this.posEnPantalla(campeon);
+    const base = this.posInterpolada(campeon, previo, alfa);
     const off = sprite.offsetGolpe || { x: 0, y: 0 };
-    const x = base.x + off.x;
-    const y = base.y + off.y;
+
+    // Inclinacion: proporcional a la rapidez del movimiento, con la direccion del
+    // movimiento. Se suaviza para que no "salte" entre ticks.
+    const vel = campeon.movimiento || { x: 0, y: 0 };
+    const rapidez = Math.hypot(vel.x, vel.y);
+    const intensidad = Math.max(
+      0,
+      Math.min(
+        1,
+        (rapidez - VELOCIDAD_INCLINACION_MIN) /
+          (VELOCIDAD_INCLINACION_MAX - VELOCIDAD_INCLINACION_MIN),
+      ),
+    );
+    const dirX = rapidez > 1e-6 ? vel.x / rapidez : 0;
+    const dirY = rapidez > 1e-6 ? vel.y / rapidez : 0;
+    const inclinacionObjetivo = dirX * intensidad * INCLINACION_MAXIMA;
+    const empujeObjetivo = sprite.radio * EMPUJE_INCLINACION * intensidad;
+    sprite.inclinacion = (sprite.inclinacion || 0) + (inclinacionObjetivo - (sprite.inclinacion || 0)) * 0.25;
+    sprite.empuje = sprite.empuje || { x: 0, y: 0 };
+    sprite.empuje.x += (dirX * empujeObjetivo - sprite.empuje.x) * 0.25;
+    sprite.empuje.y += (dirY * empujeObjetivo - sprite.empuje.y) * 0.25;
+
+    const x = base.x + off.x + sprite.empuje.x;
+    const y = base.y + off.y + sprite.empuje.y;
 
     sprite.cuerpo.setPosition(x, y);
+    sprite.cuerpo.setRotation(sprite.inclinacion);
     sprite.aura.setPosition(x, y);
     // La sombra se queda en la posicion base (en el "suelo"), sin retroceso.
     sprite.sombra.setPosition(base.x, base.y + sprite.radio * 0.8);
+
+    // Estela breve mientras dura la embestida.
+    if (campeon.ia && campeon.ia.embestida) {
+      this.dejarEstela(sprite, x, y);
+    } else {
+      sprite.ultimaEstela = null;
+    }
 
     // Burbuja de escudo: visible solo mientras el escudo este activo.
     sprite.escudo.setPosition(x, y);
@@ -1945,6 +2077,37 @@ export default class ArenaScene extends Phaser.Scene {
       }
       sprite.vidaRelleno.setFillStyle(color);
     }
+  }
+
+  // Deja una imagen residual (fantasma) del campeon que se desvanece en ~240 ms.
+  // Se genera cada cierta distancia recorrida para formar una estela continua.
+  dejarEstela(sprite, x, y) {
+    const ultima = sprite.ultimaEstela;
+    if (ultima && Math.hypot(x - ultima.x, y - ultima.y) < sprite.radio * 0.45) {
+      return;
+    }
+    sprite.ultimaEstela = { x, y };
+
+    let fantasma;
+    if (sprite.esRetrato && sprite.claveTextura && this.textures.exists(sprite.claveTextura)) {
+      fantasma = this.add
+        .image(x, y, sprite.claveTextura)
+        .setScale(sprite.cuerpo.scale)
+        .setRotation(sprite.inclinacion || 0)
+        .setTint(sprite.colorPrincipal)
+        .setAlpha(0.5);
+    } else {
+      fantasma = this.add.circle(x, y, sprite.radio, sprite.colorPrincipal, 0.5);
+    }
+    fantasma.setDepth(5).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: fantasma,
+      alpha: 0,
+      scale: fantasma.scale * 0.8,
+      duration: 240,
+      ease: "Quad.easeOut",
+      onComplete: () => fantasma.destroy(),
+    });
   }
 
   // Actualiza el relleno de una barra del HUD segun el porcentaje de vida y
