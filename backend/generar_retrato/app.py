@@ -16,7 +16,8 @@ import boto3
 from botocore.config import Config
 
 from shared.respuesta import respuesta
-from shared.reintentos import con_reintentos_throttling, ForjadorOcupadoError
+from shared.reintentos import ForjadorOcupadoError
+from shared.rotacion import cuerpo_peticion, invocar_con_rotacion
 
 # Sufijo de estilo anexado al prompt visual del campeon.
 SUFIJO_PROMPT = (
@@ -90,17 +91,11 @@ def _generar_prompt_imagen(item):
     return " ".join(palabras[:60])
 
 
-def _generar_imagen(prompt):
-    """Invoca el modelo de imagen y devuelve los bytes JPEG generados."""
-    cuerpo = {
-        "prompt": prompt,
-        "negative_prompt": NEGATIVE_PROMPT,
-        "mode": "text-to-image",
-        "aspect_ratio": "1:1",
-        "output_format": "jpeg",
-    }
+def _generar_imagen(modelo, prompt):
+    """Invoca el modelo de imagen indicado y devuelve los bytes JPEG generados."""
+    cuerpo = cuerpo_peticion(modelo, prompt, NEGATIVE_PROMPT)
     salida = _bedrock.invoke_model(
-        modelId=os.environ["IMAGE_MODEL_ID"],
+        modelId=modelo,
         body=json.dumps(cuerpo),
         contentType="application/json",
         accept="application/json",
@@ -144,8 +139,9 @@ def lambda_handler(event, context):
                 UpdateExpression="SET promptImagen = :p",
                 ExpressionAttributeValues={":p": base},
             )
-        imagen = con_reintentos_throttling(
-            lambda: _generar_imagen(base + SUFIJO_PROMPT), inicio=inicio
+        imagen = invocar_con_rotacion(
+            lambda modelo: _generar_imagen(modelo, base + SUFIJO_PROMPT),
+            inicio=inicio,
         )
 
         # Nombre unico para que CloudFront no sirva una version vieja en cache.

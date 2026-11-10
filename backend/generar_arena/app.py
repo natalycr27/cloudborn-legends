@@ -3,7 +3,7 @@
 #
 # Elige un tema al azar, genera la imagen de la arena con un modelo de
 # Stability AI en Bedrock (IMAGE_REGION) y la guarda en S3 bajo
-# generados/arenas/<uuid>.jpg. Devuelve {"imagenUrl": ..., "tema": ...}.
+# generados/arenas/<tema-con-guiones>-<uuid>.jpg. Devuelve {"imagenUrl": ..., "tema": ...}.
 
 import os
 import json
@@ -16,26 +16,9 @@ import boto3
 from botocore.config import Config
 
 from shared.respuesta import respuesta
-from shared.reintentos import con_reintentos_throttling, ForjadorOcupadoError
-
-TEMAS = [
-    "volcán con ríos de lava",
-    "bosque encantado",
-    "ruinas antiguas de piedra",
-    "templo de hielo",
-    "desierto con obeliscos",
-    "pantano con niebla",
-]
-
-# Tema en español -> descripcion en ingles para el prompt del modelo.
-TEMAS_EN = {
-    "volcán con ríos de lava": "volcano with rivers of lava",
-    "bosque encantado": "enchanted forest",
-    "ruinas antiguas de piedra": "ancient stone ruins",
-    "templo de hielo": "ice temple",
-    "desierto con obeliscos": "desert with obelisks",
-    "pantano con niebla": "foggy swamp",
-}
+from shared.reintentos import ForjadorOcupadoError
+from shared.rotacion import cuerpo_peticion, invocar_con_rotacion
+from shared.arenas import TEMAS, TEMAS_EN, llave_arena
 
 PLANTILLA_PROMPT = (
     "top-down view of an empty circular fantasy battle arena, {tema}, "
@@ -60,17 +43,11 @@ _bedrock = boto3.client(
 _s3 = boto3.client("s3", config=_CONFIG_AWS)
 
 
-def _generar_imagen(prompt):
-    """Invoca el modelo de imagen y devuelve los bytes JPEG generados."""
-    cuerpo = {
-        "prompt": prompt,
-        "negative_prompt": NEGATIVE_PROMPT,
-        "mode": "text-to-image",
-        "aspect_ratio": "1:1",
-        "output_format": "jpeg",
-    }
+def _generar_imagen(modelo, prompt):
+    """Invoca el modelo de imagen indicado y devuelve los bytes JPEG generados."""
+    cuerpo = cuerpo_peticion(modelo, prompt, NEGATIVE_PROMPT)
     salida = _bedrock.invoke_model(
-        modelId=os.environ["IMAGE_MODEL_ID"],
+        modelId=modelo,
         body=json.dumps(cuerpo),
         contentType="application/json",
         accept="application/json",
@@ -93,11 +70,11 @@ def lambda_handler(event, context):
     try:
         tema = random.choice(TEMAS)
         prompt = PLANTILLA_PROMPT.format(tema=TEMAS_EN[tema])
-        imagen = con_reintentos_throttling(
-            lambda: _generar_imagen(prompt), inicio=inicio
+        imagen = invocar_con_rotacion(
+            lambda modelo: _generar_imagen(modelo, prompt), inicio=inicio
         )
 
-        llave = f"generados/arenas/{uuid.uuid4()}.jpg"
+        llave = llave_arena(tema, uuid.uuid4())
         _s3.put_object(
             Bucket=os.environ["BUCKET_NAME"],
             Key=llave,

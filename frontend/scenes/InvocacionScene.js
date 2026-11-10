@@ -33,6 +33,10 @@ import {
 const MIN_CARACTERES = 10;
 const MAX_CARACTERES = 500;
 
+// Textos del recuadro del retrato.
+const TEXTO_FORJANDO = "Forjando su apariencia…";
+const TEXTO_EN_FILA = "En la fila del forjador…";
+
 export default class InvocacionScene extends Phaser.Scene {
   // Registra la escena con la clave "InvocacionScene" usada por main.js.
   constructor() {
@@ -403,6 +407,7 @@ export default class InvocacionScene extends Phaser.Scene {
     }
     if (this.retratoForja) {
       this.retratoForja.classList.remove("oculto");
+      this.retratoForja.textContent = TEXTO_FORJANDO;
     }
   }
 
@@ -420,7 +425,7 @@ export default class InvocacionScene extends Phaser.Scene {
     }
     this.retratoContenedor.classList.add("visible");
 
-    // Si el servidor responde 429, pedirRetrato reintenta cada 20 s (hasta 3
+    // Si el servidor responde 429, pedirRetrato reintenta cada 20 s (hasta 6
     // veces) en segundo plano y avisa por este callback; mientras tanto el
     // recuadro "Forjando su apariencia…" se queda visible.
     const alReintentoTerminado = (url) => {
@@ -440,7 +445,12 @@ export default class InvocacionScene extends Phaser.Scene {
         return;
       }
       if (!url) {
-        if (!retratoReintentandose(campeon.id)) {
+        if (retratoReintentandose(campeon.id)) {
+          // 429: sigue reintentando en segundo plano (cada 20 s, hasta 6 veces).
+          if (this.retratoForja) {
+            this.retratoForja.textContent = TEXTO_EN_FILA;
+          }
+        } else {
           this.ocultarRetrato();
         }
         return;

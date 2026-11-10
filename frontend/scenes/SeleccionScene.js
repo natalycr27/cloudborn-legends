@@ -26,7 +26,7 @@
 
 import { API_URL } from "../src/main.js";
 import {
-  pedirArena,
+  elegirArenaAleatoria,
   pedirRetrato,
   urlImagenSegura,
   reintentarElementoImagen,
@@ -122,39 +122,32 @@ export default class SeleccionScene extends Phaser.Scene {
     this.actualizarPista();
     this.cargarCampeones();
 
-    // Genera la arena en segundo plano; no bloquea la seleccion.
-    this.generarArenaEnSegundoPlano();
+    // Elige una arena pregenerada en segundo plano; no bloquea la seleccion.
+    this.elegirArenaEnSegundoPlano();
   }
 
-  // Llama a POST /arenas sin esperar y guarda el resultado (o el error) en el
-  // registry de Phaser para que ArenaScene lo use. Mientras tanto el estado es
-  // "pendiente". Un token evita que una respuesta vieja pise a una mas nueva.
-  generarArenaEnSegundoPlano() {
+  // Llama a GET /arenas sin esperar, elige una al azar y la guarda en el
+  // registry de Phaser para que ArenaScene la use. Si la lista esta vacia o
+  // falla, marca "error" y ArenaScene usa la arena dibujada de respaldo. Un
+  // token evita que una respuesta vieja pise a una mas nueva.
+  elegirArenaEnSegundoPlano() {
     const registry = this.registry;
     const token = {};
     SeleccionScene.tokenArena = token;
     registry.set(REGISTRY_ARENA, { estado: "pendiente" });
 
-    pedirArena()
-      .then((arena) => {
-        if (SeleccionScene.tokenArena === token) {
-          registry.set(REGISTRY_ARENA, {
-            estado: "lista",
-            imagenUrl: arena.imagenUrl,
-            tema: arena.tema,
-          });
-        }
-      })
-      .catch((error) => {
-        if (SeleccionScene.tokenArena === token) {
-          registry.set(REGISTRY_ARENA, {
-            estado: "error",
-            error: error && error.message ? error.message : "error",
-          });
-        }
-      });
+    elegirArenaAleatoria().then((arena) => {
+      if (SeleccionScene.tokenArena !== token) {
+        return;
+      }
+      registry.set(
+        REGISTRY_ARENA,
+        arena
+          ? { estado: "lista", imagenUrl: arena.imagenUrl, tema: arena.tema }
+          : { estado: "error", error: "sin arenas" }
+      );
+    });
   }
-
   // Llama a GET /campeones y, segun el resultado, muestra la lista, el estado
   // vacio o un error en espanol.
   async cargarCampeones() {
@@ -274,6 +267,13 @@ export default class SeleccionScene extends Phaser.Scene {
         `data-colores="${this.escapar(estiloColores)}" />`
       : `<span class="seleccion-retrato" aria-hidden="true" style="${estiloColores}"></span>`;
 
+    // El circulo de colores solo se muestra si no hay retrato (el retrato ya
+    // identifica al campeon y asi el nombre tiene mas espacio).
+    const circuloColoresHtml = urlRetrato
+      ? ""
+      : `<span class="seleccion-colores" role="img" ` +
+        `aria-label="Colores de ${nombre}" style="${estiloColores}"></span>`;
+
     // Estadisticas con barras, cada una escalada a su rango.
     const estadisticasHtml = RANGOS_ESTADISTICAS.map((rango) => {
       const valor = estad[rango.clave];
@@ -318,8 +318,7 @@ export default class SeleccionScene extends Phaser.Scene {
       `<div class="seleccion-cabecera">` +
       `<div class="seleccion-titulo">${retratoHtml}` +
       `<h2 class="seleccion-nombre">${nombre}</h2></div>` +
-      `<span class="seleccion-colores" role="img" ` +
-      `aria-label="Colores de ${nombre}" style="${estiloColores}"></span>` +
+      circuloColoresHtml +
       `</div>` +
       `<div class="seleccion-estadisticas">${estadisticasHtml}</div>` +
       `<div class="seleccion-habilidades">${habilidadesHtml}</div>` +

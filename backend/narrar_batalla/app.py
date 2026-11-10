@@ -33,6 +33,7 @@ SYSTEM_PROMPT = (
     "de una batalla entre dos campeones y una lista de eventos. Genera un "
     "comentario narrativo en español de entre 100 y 500 caracteres que "
     "mencione el resultado de la batalla y al menos un evento ocurrido. "
+    "El ganador indicado es definitivo; nunca digas que ganó el otro campeón ni te contradigas. "
     "Devuelve únicamente el texto narrativo, sin formato JSON."
 )
 
@@ -101,8 +102,16 @@ def _construir_mensaje_usuario(cuerpo, nombre_a, nombre_b):
     # Representación textual compacta de los eventos para el prompt.
     eventos_texto = ", ".join(str(ev) for ev in eventos) if eventos else "ninguno"
 
+    if resultado == "empate":
+        linea_resultado = ""  # el empate ya consta en "Resultado: empate."
+    else:
+        ganador = _nombre_ganador(cuerpo, nombre_a, nombre_b)
+        perdedor = nombre_b if ganador == nombre_a else nombre_a
+        linea_resultado = f"Ganador: {ganador}. Perdedor: {perdedor}. "
+
     return (
         f"Resultado: {resultado}. "
+        f"{linea_resultado}"
         f"Campeón A: {nombre_a}. "
         f"Campeón B: {nombre_b}. "
         f"Eventos: {eventos_texto}."

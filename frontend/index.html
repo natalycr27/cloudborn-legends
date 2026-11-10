@@ -24,23 +24,27 @@
         font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
       }
 
-      /* Contenedor del juego: centra el canvas de Phaser y sirve de ancla
-         para los elementos HTML superpuestos (overlay). */
+      /* Contenedor del juego: ocupa toda la ventana y es el UNICO responsable
+         de centrar el canvas (flex). Phaser solo escala (Scale.FIT) y NO centra
+         (autoCenter: NO_CENTER), para evitar un doble centrado. Tambien sirve de
+         ancla para los overlays HTML (position:absolute). */
       #contenedor-juego {
         position: relative;
         width: 100vw;
         height: 100vh; /* fallback */
         height: 100dvh;
         overflow: hidden;
-        /* Sin flex: el escalado y centrado del canvas lo hace solo Phaser
-           (Scale.FIT + CENTER_BOTH). */
+        display: flex;
+        align-items: center;
+        justify-content: center;
       }
 
-      /* Phaser fija el tamano y los margenes del canvas; no se limita aqui. */
+      /* Phaser fija el tamano del canvas; sin margenes propios ni encogimiento. */
       #contenedor-juego canvas {
         display: block;
+        flex: none;
+        margin: 0;
       }
-
       /* -----------------------------------------------------------------
          Overlay HTML de la pantalla de invocacion.
          El campo de texto, el boton y el contador NO son objetos de Phaser:
@@ -395,7 +399,8 @@
         font-size: 16px; /* minimo 16px en movil (Requisito 18.1) */
         font-weight: 600;
         color: #e8eefc;
-        word-break: break-word;
+        overflow-wrap: normal;
+        word-break: normal;
       }
       /* Numero de victorias, alineado a la derecha. */
       .entrada-victorias {
@@ -525,9 +530,11 @@
       }
       .seleccion-nombre {
         margin: 0;
-        font-size: clamp(18px, 4.5vw, 24px);
+        font-size: clamp(16px, 4vw, 20px);
         line-height: 1.2;
-        word-break: break-word;
+        min-width: 0;
+        overflow-wrap: normal;
+        word-break: normal;
       }
       /* Circulo dividido en dos mitades con los colores del campeon. */
       .seleccion-colores {
@@ -674,6 +681,7 @@
         display: flex;
         align-items: center;
         gap: 12px;
+        flex: 1 1 auto;
         min-width: 0;
       }
       .entrada-retrato {

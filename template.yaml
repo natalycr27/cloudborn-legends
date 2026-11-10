@@ -20,7 +20,7 @@ Parameters:
   ImageModelId:
     Type: String
     Default: stability.sd3-5-large-v1:0
-    Description: Identificador del modelo de imagen de Stability AI en Amazon Bedrock.
+    Description: En desuso. Las Lambdas rotan entre 3 modelos fijos (ver backend/shared/rotacion.py).
 
   # Region donde se invoca el modelo de imagen (el resto del stack va en us-east-1).
   ImageRegion:
@@ -356,7 +356,10 @@ Resources:
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
-                Resource: !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/${ImageModelId}'
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/stability.sd3-5-large-v1:0'
+                  - !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/stability.stable-image-core-v1:1'
+                  - !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/stability.stable-image-ultra-v1:1'
               - Effect: Allow
                 Action:
                   - s3:PutObject
@@ -394,12 +397,44 @@ Resources:
               - Effect: Allow
                 Action:
                   - bedrock:InvokeModel
-                Resource: !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/${ImageModelId}'
+                Resource:
+                  - !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/stability.sd3-5-large-v1:0'
+                  - !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/stability.stable-image-core-v1:1'
+                  - !Sub 'arn:aws:bedrock:${ImageRegion}::foundation-model/stability.stable-image-ultra-v1:1'
               - Effect: Allow
                 Action:
                   - s3:PutObject
                 Resource: !Sub '${FrontendBucket.Arn}/generados/*'
 
+  # -------------------------------------------------------------------------
+  # Rol IAM minimo para listar_arenas: solo ListBucket sobre generados/arenas/.
+  # -------------------------------------------------------------------------
+  ListarArenasRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ListarArenasPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !GetAtt FrontendBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix:
+                      - 'generados/arenas/'
+                      - 'generados/arenas/*'
   # -------------------------------------------------------------------------
   # Lambda generar_retrato (POST /campeones/{id}/retrato). Timeout de 28 s
   # (API Gateway REST corta a los 29 s).
@@ -449,6 +484,26 @@ Resources:
             Path: /arenas
             Method: post
 
+  # -------------------------------------------------------------------------
+  # Lambda listar_arenas (GET /arenas): lista las arenas pregeneradas en S3.
+  # -------------------------------------------------------------------------
+  ListarArenasFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: listar_arenas.app.lambda_handler
+      Timeout: 10
+      Role: !GetAtt ListarArenasRole.Arn
+      Environment:
+        Variables:
+          BUCKET_NAME: !Ref FrontendBucket
+          CLOUDFRONT_URL: !Sub 'https://${CloudFrontDistribution.DomainName}'
+      Events:
+        ListarArenas:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /arenas
+            Method: get
   # -------------------------------------------------------------------------
   # Lambda crear_campeon (POST /campeones): genera el campeon via Bedrock,
   # lo valida y lo guarda en DynamoDB. Timeout de 15 s (Bedrock read_timeout=12).

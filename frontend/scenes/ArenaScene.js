@@ -1550,7 +1550,7 @@ export default class ArenaScene extends Phaser.Scene {
         align: "center",
         wordWrap: { width: panelAncho - 40 },
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0)
       .setResolution(this.resolucionTexto())
       .setDepth(32)
       .setAlpha(0);
@@ -1567,7 +1567,7 @@ export default class ArenaScene extends Phaser.Scene {
         lineSpacing: 4,
         wordWrap: { width: panelAncho - 48 },
       })
-      .setOrigin(0.5)
+      .setOrigin(0.5, 0)
       .setResolution(this.resolucionTexto())
       .setDepth(32)
       .setAlpha(0);
@@ -1575,7 +1575,47 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Boton para continuar manualmente al ranking (ademas de la navegacion
     // automatica que dispara procesarFinCombate al terminar el flujo).
-    this.crearBotonRanking(width / 2, bordePanelSuperior + panelAlto - 32, panelAncho);
+    const boton = this.crearBotonRanking(width / 2, bordePanelSuperior + panelAlto - 32, panelAncho);
+
+    // El panel se ajusta al contenido: la narracion va justo bajo el ganador.
+    this.finUI = { panel, titulo, sub, boton, panelAncho };
+    this.disponerPantallaFinal();
+  }
+
+  // Coloca titulo, ganador, narracion y boton uno bajo otro y ajusta la altura
+  // del panel a su contenido (sin huecos). Se vuelve a llamar al cambiar la
+  // narracion porque su altura depende del texto.
+  disponerPantallaFinal() {
+    const ui = this.finUI;
+    if (!ui || !ui.panel.active) {
+      return;
+    }
+    const { height } = this.scale;
+    const margen = 24;
+    const sep = 10;
+    const altoBoton = 44;
+    const narr = this.textoNarracion && this.textoNarracion.active ? this.textoNarracion : null;
+
+    const altoTitulo = ui.titulo.height;
+    const altoSub = ui.sub.height;
+    const altoNarr = narr ? narr.height : 0;
+    const contenido =
+      margen + altoTitulo + sep + altoSub + (narr ? sep + altoNarr : 0) +
+      margen + altoBoton + margen;
+
+    const panelAlto = Math.min(height - 40, contenido);
+    const top = (height - panelAlto) / 2;
+
+    ui.panel.setSize(ui.panelAncho, panelAlto);
+    ui.panel.setY(height / 2);
+    ui.titulo.setY(top + margen + altoTitulo / 2);
+    ui.sub.setY(top + margen + altoTitulo + sep);
+    if (narr) {
+      narr.setY(ui.sub.y + altoSub + sep);
+    }
+    const yBoton = top + panelAlto - margen - altoBoton / 2;
+    ui.boton.fondo.setY(yBoton);
+    ui.boton.etiqueta.setY(yBoton);
   }
 
   // Crea un boton "Ver Salon de las Leyendas" dentro de la pantalla final que
@@ -1610,6 +1650,8 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Al pulsar, navega inmediatamente al ranking.
     fondo.on("pointerup", () => this.irAlRanking());
+
+    return { fondo, etiqueta };
   }
 
   // -------------------------------------------------------------------------
@@ -1820,6 +1862,7 @@ export default class ArenaScene extends Phaser.Scene {
     }
     this.textoNarracion.setColor(COLOR_TEXTO);
     this.textoNarracion.setText(texto || this.narracionLocalDeRespaldo());
+    this.disponerPantallaFinal();
   }
 
   // Navega a RankingScene de forma idempotente (solo una vez). Se usa tanto por

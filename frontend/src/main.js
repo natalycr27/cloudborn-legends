@@ -35,8 +35,8 @@ export const API_URL = obtenerApiUrl();
 //   - Vertical (celular en vertical, alto > ancho): 720x1280, para que el
 //     juego ocupe la pantalla alta de un movil sin franjas negras enormes.
 // El publico entra escaneando un QR desde el celular, asi que la version
-// vertical es prioritaria. Phaser.Scale.FIT + CENTER_BOTH escalan y centran
-// el canvas dentro del contenedor manteniendo la proporcion elegida aqui.
+// vertical es prioritaria. Phaser.Scale.FIT escala el canvas y el CSS flex de
+// #contenedor-juego lo centra, manteniendo la proporcion elegida aqui.
 const ANCHO_HORIZONTAL = 800;
 const ALTO_HORIZONTAL = 600;
 const ANCHO_VERTICAL = 720;
@@ -63,12 +63,12 @@ const config = {
   backgroundColor: "#0b1020",
   parent: "contenedor-juego", // monta el canvas dentro del contenedor del overlay
   scale: {
-    // FIT escala el canvas manteniendo la proporcion dentro del contenedor,
-    // y CENTER_BOTH lo centra. Asi el juego se adapta de 320px a 1920px sin
+    // FIT escala el canvas manteniendo la proporcion dentro del contenedor;
+    // el centrado lo hace solo el CSS (flex). Asi el juego se adapta de 320px a 1920px sin
     // generar scroll horizontal (Requisito 1.6). El tamano base depende de la
     // orientacion (vertical en movil, horizontal en escritorio).
     mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    autoCenter: Phaser.Scale.NO_CENTER, // el centrado lo hace el CSS (flex) de #contenedor-juego
     width: ANCHO_BASE,
     height: ALTO_BASE,
   },

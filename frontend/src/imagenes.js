@@ -23,8 +23,8 @@ export const REINTENTOS_IMAGEN = 3;
 export const ESPERA_REINTENTO_IMAGEN_MS = 2000;
 
 // Reintentos en segundo plano cuando POST /retrato responde 429 (el forjador
-// esta ocupado): hasta 3 veces, cada 20 s.
-export const REINTENTOS_RETRATO_429 = 3;
+// esta ocupado): hasta 6 veces, cada 20 s.
+export const REINTENTOS_RETRATO_429 = 6;
 export const ESPERA_RETRATO_429_MS = 20000;
 
 const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
@@ -106,7 +106,7 @@ export function retratoReintentandose(idCampeon) {
   return retratosReintentando.has(String(idCampeon));
 }
 
-// Tras un 429 reintenta cada 20 s (hasta 3 veces) sin bloquear. Si alguno
+// Tras un 429 reintenta cada 20 s (hasta 6 veces) sin bloquear. Si alguno
 // funciona llama a alListo(url). Al terminar deja de estar "reintentando".
 async function reintentarRetratoEnSegundoPlano(idCampeon, tiempoMs, alListo) {
   const clave = String(idCampeon);
@@ -140,7 +140,7 @@ async function reintentarRetratoEnSegundoPlano(idCampeon, tiempoMs, alListo) {
 // Pide el retrato de un campeon. Devuelve la URL segura o null si falla, no hay
 // id o tarda mas del tiempo maximo. Nunca lanza.
 // Si el servidor responde 429 (forjador ocupado) devuelve null y reintenta cada
-// 20 s hasta 3 veces en segundo plano; al conseguirlo llama a alListo(url), y
+// 20 s hasta 6 veces en segundo plano; al conseguirlo llama a alListo(url), y
 // si se agotan los reintentos llama a alListo(null).
 export async function pedirRetrato(
   idCampeon,
@@ -176,4 +176,39 @@ export async function pedirArena(tiempoMs = TIEMPO_MAXIMO_IMAGEN_MS) {
     imagenUrl,
     tema: typeof (datos && datos.tema) === "string" ? datos.tema : "",
   };
+}
+
+// Lista las arenas pregeneradas (GET /arenas) y elige una al azar. Devuelve
+// { imagenUrl, tema } o null si la lista esta vacia o la peticion falla.
+// Nunca lanza.
+export async function elegirArenaAleatoria(tiempoMs = 8000) {
+  const controlador = new AbortController();
+  const temporizador = setTimeout(() => controlador.abort(), tiempoMs);
+  try {
+    const respuesta = await fetch(`${API_URL}/arenas`, {
+      signal: controlador.signal,
+    });
+    if (!respuesta.ok) {
+      return null;
+    }
+    const datos = await respuesta.json();
+    if (!Array.isArray(datos)) {
+      return null;
+    }
+    const validas = datos
+      .map((a) => ({
+        imagenUrl: urlImagenSegura(a && a.imagenUrl),
+        tema: typeof (a && a.tema) === "string" ? a.tema : "",
+      }))
+      .filter((a) => a.imagenUrl);
+    if (validas.length === 0) {
+      return null;
+    }
+    return validas[Math.floor(Math.random() * validas.length)];
+  } catch (error) {
+    console.warn("No se pudo listar las arenas:", error);
+    return null;
+  } finally {
+    clearTimeout(temporizador);
+  }
 }
