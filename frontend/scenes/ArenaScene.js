@@ -49,6 +49,18 @@ import {
   PASO_FIJO,
 } from "../src/combat.js";
 import { API_URL } from "../src/main.js";
+import {
+  REGISTRY_ARENA,
+  REINTENTOS_IMAGEN,
+  ESPERA_REINTENTO_IMAGEN_MS,
+  urlImagenSegura,
+} from "../src/imagenes.js";
+
+// Lado en pixeles de la textura circular recortada del retrato de un campeon.
+const LADO_TEXTURA_RETRATO = 256;
+// Colores del anillo en el suelo de los campeones con retrato.
+const COLOR_ANILLO_A = 0x4f9bff; // azul para el campeon A
+const COLOR_ANILLO_B = 0xff5a5a; // rojo para el campeon B
 
 // Paleta reutilizada (coincide con index.html / las demas escenas).
 const COLOR_FONDO = "#0b1020";
@@ -126,6 +138,13 @@ export default class ArenaScene extends Phaser.Scene {
 
     // Bandera para navegar al ranking una sola vez (boton manual + automatico).
     this.navegacionIniciada = false;
+
+    // Imagenes generadas con IA: textura de fondo de la arena (si cargo), su
+    // tema y las texturas circulares de retrato de cada campeon.
+    this.claveFondoArena = null;
+    this.temaArena = "";
+    this.texturaRetrato = { A: null, B: null };
+    this.texturasCreadas = [];
   }
 
   // Lee los datos entrantes de SeleccionScene antes de create().
@@ -146,6 +165,10 @@ export default class ArenaScene extends Phaser.Scene {
     this.finProcesado = false;
     this.textoNarracion = null;
     this.navegacionIniciada = false;
+    this.claveFondoArena = null;
+    this.temaArena = "";
+    this.texturaRetrato = { A: null, B: null };
+    this.texturasCreadas = [];
   }
 
   // Inicializa el combate, calcula la escala de la arena y dibuja la escena base.
@@ -185,6 +208,189 @@ export default class ArenaScene extends Phaser.Scene {
     // sin reiniciar la pelea.
     this.scale.on("resize", this.alRedimensionar, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.alApagar, this);
+
+    // Carga en segundo plano la arena generada y los retratos. El combate
+    // arranca ya con el dibujo de respaldo; si las imagenes llegan, se
+    // reconstruye el layout sin tocar el estado del combate.
+    this.cargarImagenesGeneradas();
+  }
+
+  // -------------------------------------------------------------------------
+  // Imagenes generadas con IA (arena y retratos)
+  // -------------------------------------------------------------------------
+
+  // Encola la carga dinamica (loader de Phaser) de la imagen de la arena (si
+  // SeleccionScene la dejo lista en el registry) y de los retratos de los
+  // campeones que tengan imagenUrl. Si alguna falla, simplemente queda el
+  // dibujo de respaldo para ese elemento.
+  cargarImagenesGeneradas() {
+    const pendientes = [];
+
+    // Arena generada: solo si ya esta lista; si esta pendiente o fallo, respaldo.
+    const arena = this.registry ? this.registry.get(REGISTRY_ARENA) : null;
+    const urlArena =
+      arena && arena.estado === "lista" ? urlImagenSegura(arena.imagenUrl) : null;
+    if (urlArena) {
+      const clave = `arena-bg-${urlArena}`;
+      pendientes.push({ clave, url: urlArena, tipo: "arena", tema: arena.tema });
+    }
+
+    // Retratos de los campeones.
+    [
+      ["A", this.campeonA],
+      ["B", this.campeonB],
+    ].forEach(([lado, campeon]) => {
+      const url = urlImagenSegura(campeon && campeon.imagenUrl);
+      if (url) {
+        pendientes.push({
+          clave: `retrato-src-${lado}-${url}`,
+          url,
+          tipo: "retrato",
+          lado,
+        });
+      }
+    });
+
+    if (pendientes.length === 0) {
+      return;
+    }
+
+
+    const alTerminar = () => {
+      // La escena pudo cerrarse mientras cargaba.
+      if (!this.sys || !this.sys.isActive() || !this.estadoCombate) {
+        return;
+      }
+      let huboCambios = false;
+
+      for (const p of pendientes) {
+        if (!this.textures.exists(p.clave)) {
+          continue; // fallo la carga: se queda el respaldo
+        }
+        if (p.tipo === "arena") {
+          this.claveFondoArena = p.clave;
+          this.temaArena = typeof p.tema === "string" ? p.tema : "";
+          huboCambios = true;
+        } else {
+          const claveCircular = this.crearTexturaCircular(p.clave, p.lado);
+          if (claveCircular) {
+            this.texturaRetrato[p.lado] = claveCircular;
+            huboCambios = true;
+          }
+        }
+      }
+
+      if (huboCambios) {
+        this.reconstruirLayout();
+        if (this.claveFondoArena) {
+          this.mostrarTemaArena();
+        }
+      }
+    };
+
+    // Encola solo las texturas que aun no existen. Si alguna falla (error de
+    // red) se reintenta hasta REINTENTOS_IMAGEN veces con 2 s de espera antes
+    // de quedarse con el dibujo de respaldo.
+    const cargar = (lista, intento) => {
+      let encoladas = 0;
+      for (const p of lista) {
+        if (!this.textures.exists(p.clave)) {
+          this.load.image(p.clave, p.url);
+          if (!this.texturasCreadas.includes(p.clave)) {
+            this.texturasCreadas.push(p.clave);
+          }
+          encoladas++;
+        }
+      }
+      if (encoladas === 0) {
+        alTerminar();
+        return;
+      }
+      this.load.once(Phaser.Loader.Events.COMPLETE, () => {
+        const faltantes = lista.filter((p) => !this.textures.exists(p.clave));
+        if (
+          faltantes.length > 0 &&
+          intento < REINTENTOS_IMAGEN &&
+          this.sys &&
+          this.sys.isActive()
+        ) {
+          this.time.delayedCall(ESPERA_REINTENTO_IMAGEN_MS, () =>
+            cargar(faltantes, intento + 1)
+          );
+        } else {
+          alTerminar();
+        }
+      });
+      this.load.start();
+    };
+    cargar(pendientes, 0);
+  }
+
+  // Recorta la imagen cargada en un circulo (textura de canvas) para poder usarla
+  // como ficha que se mueve sin necesidad de mascaras. Devuelve la clave de la
+  // textura circular o null si no se pudo crear.
+  crearTexturaCircular(claveOrigen, lado) {
+    try {
+      const claveDestino = `retrato-circ-${lado}-${claveOrigen}`;
+      if (this.textures.exists(claveDestino)) {
+        return claveDestino;
+      }
+      const origen = this.textures.get(claveOrigen).getSourceImage();
+      const d = LADO_TEXTURA_RETRATO;
+      const lienzo = this.textures.createCanvas(claveDestino, d, d);
+      if (!lienzo) {
+        return null;
+      }
+      const ctx = lienzo.getContext();
+      ctx.beginPath();
+      ctx.arc(d / 2, d / 2, d / 2, 0, Math.PI * 2);
+      ctx.closePath();
+      ctx.clip();
+      // Recorte tipo "cover": llena el circulo sin deformar la imagen.
+      const lado0 = Math.min(origen.width, origen.height);
+      const sx = (origen.width - lado0) / 2;
+      const sy = (origen.height - lado0) / 2;
+      ctx.drawImage(origen, sx, sy, lado0, lado0, 0, 0, d, d);
+      lienzo.refresh();
+      this.texturasCreadas.push(claveDestino);
+      return claveDestino;
+    } catch (error) {
+      console.warn("No se pudo recortar el retrato:", error);
+      return null;
+    }
+  }
+
+  // Muestra "Arena: <tema>" al inicio durante 2 segundos y luego lo desvanece.
+  mostrarTemaArena() {
+    const tema = (this.temaArena || "").trim();
+    if (!tema) {
+      return;
+    }
+    const nombre = tema.charAt(0).toUpperCase() + tema.slice(1);
+    const { width } = this.scale;
+    const texto = this.add
+      .text(width / 2, this.altoHud() + 28, `Arena: ${nombre}`, {
+        fontFamily: "Georgia, serif",
+        fontSize: "26px",
+        fontStyle: "bold",
+        color: "#ffffff",
+        stroke: "#000000",
+        strokeThickness: 5,
+        align: "center",
+        wordWrap: { width: width - 40 },
+      })
+      .setOrigin(0.5)
+      .setResolution(this.resolucionTexto())
+      .setDepth(25)
+      .setAlpha(0);
+    this.tweens.add({
+      targets: texto,
+      alpha: 1,
+      duration: 300,
+      hold: 1400,
+      yoyo: true,
+      onComplete: () => texto.destroy(),
+    });
   }
 
   // Construye (o reconstruye) todo el contenido visual de la escena para el
@@ -214,6 +420,12 @@ export default class ArenaScene extends Phaser.Scene {
   // layout para el nuevo tamano, de modo que al girar el telefono la arena se
   // reacomode: el HUD arriba y el coliseo ocupando casi todo el ancho.
   alRedimensionar() {
+    this.reconstruirLayout();
+  }
+
+  // Destruye y reconstruye todo el contenido visual conservando el estado del
+  // combate. Se usa al cambiar el tamano y cuando llegan las imagenes generadas.
+  reconstruirLayout() {
     // Evita reconstruir si la escena ya no esta activa (p. ej. navegando fuera).
     if (!this.scene || !this.scene.isActive() || !this.estadoCombate) {
       return;
@@ -244,6 +456,17 @@ export default class ArenaScene extends Phaser.Scene {
     if (this.scale) {
       this.scale.off("resize", this.alRedimensionar, this);
     }
+    // Libera las texturas dinamicas (arena y retratos) para no acumular memoria.
+    if (this.textures) {
+      for (const clave of this.texturasCreadas) {
+        if (this.textures.exists(clave)) {
+          this.textures.remove(clave);
+        }
+      }
+    }
+    this.texturasCreadas = [];
+    this.claveFondoArena = null;
+    this.texturaRetrato = { A: null, B: null };
   }
 
   // -------------------------------------------------------------------------
@@ -346,12 +569,39 @@ export default class ArenaScene extends Phaser.Scene {
   // Dibuja el coliseo completo: gradas con publico, piso circular de baldosas,
   // anillo de borde, runas centrales, 4 antorchas y la vineta oscura.
   dibujarColiseo() {
+    if (this.claveFondoArena && this.textures.exists(this.claveFondoArena)) {
+      // Arena generada con IA como fondo, con viñeta oscura marcada.
+      this.dibujarFondoImagen();
+      this.dibujarVineta(3);
+      return;
+    }
     this.dibujarGradasYPublico();
     this.dibujarPiso();
     this.dibujarAnillo();
     this.dibujarRunas();
     this.dibujarAntorchas();
     this.dibujarVineta();
+  }
+
+  // Fondo de imagen: escalada tipo "cover" para llenar todo el canvas (y por
+  // tanto el area de combate) centrada, con un velo oscuro leve para que las
+  // fichas y efectos se lean bien, y un aro tenue que marca la zona de pelea.
+  dibujarFondoImagen() {
+    const { width, height } = this.scale;
+    const fondo = this.add
+      .image(width / 2, height / 2, this.claveFondoArena)
+      .setDepth(0);
+    const escalaCover = Math.max(width / fondo.width, height / fondo.height);
+    fondo.setScale(escalaCover);
+
+    this.add
+      .rectangle(0, 0, width, height, 0x000000, 0.22)
+      .setOrigin(0, 0)
+      .setDepth(0);
+
+    const aro = this.add.graphics().setDepth(3);
+    aro.lineStyle(Math.max(2, 3 * this.escala), 0xffffff, 0.18);
+    aro.strokeCircle(this.centroX, this.centroY, this.radioArena);
   }
 
   // Gradas: anillo oscuro alrededor del piso con el publico como puntos que
@@ -524,7 +774,7 @@ export default class ArenaScene extends Phaser.Scene {
   // Vineta oscura: anillo radial de oscuridad en los bordes del canvas para
   // concentrar la mirada en el centro de la arena. Se dibuja como varios aros
   // negros translucidos cada vez mas opacos hacia el exterior.
-  dibujarVineta() {
+  dibujarVineta(intensidad = 1) {
     const vineta = this.add.graphics().setDepth(7);
     const maxR = Math.hypot(this.scale.width, this.scale.height) / 2;
     const cx = this.scale.width / 2;
@@ -533,7 +783,7 @@ export default class ArenaScene extends Phaser.Scene {
     for (let i = 0; i < aros; i++) {
       const t = i / aros;
       const radio = maxR * (0.55 + 0.45 * t);
-      vineta.lineStyle(maxR * 0.1, 0x000000, t * 0.12);
+      vineta.lineStyle(maxR * 0.1, 0x000000, Math.min(0.9, t * 0.12 * intensidad));
       vineta.strokeCircle(cx, cy, radio);
     }
   }
@@ -544,14 +794,109 @@ export default class ArenaScene extends Phaser.Scene {
 
   // Crea los objetos graficos persistentes de cada campeon.
   crearSprites() {
-    this.sprites.A = this.crearSpriteCampeon(this.estadoCombate.campeonA);
-    this.sprites.B = this.crearSpriteCampeon(this.estadoCombate.campeonB);
+    this.sprites.A = this.crearSpriteCampeon(this.estadoCombate.campeonA, "A");
+    this.sprites.B = this.crearSpriteCampeon(this.estadoCombate.campeonB, "B");
+  }
+
+  // Ficha circular para un campeon con retrato: sombra, aura, anillo en el
+  // suelo (azul A / rojo B), retrato recortado en circulo, borde con su
+  // colorPrincipal, burbuja de escudo y barra de vida flotando encima.
+  crearSpriteRetrato(campeon, lado, claveTextura) {
+    const radio = RADIO_CAMPEON * 1.2 * this.escala;
+    const colorPrincipal = this.colorAEntero(campeon.colorPrincipal);
+    const grosorBorde = Math.max(3, 4 * this.escala);
+
+    const sombra = this.add
+      .ellipse(0, 0, radio * 2.2, radio * 0.9, 0x000000, 0.35)
+      .setDepth(5);
+
+    // Anillo en el suelo: elipse con el color del bando.
+    const colorAnillo = lado === "A" ? COLOR_ANILLO_A : COLOR_ANILLO_B;
+    const anillo = this.add
+      .ellipse(0, 0, radio * 2.8, radio * 1.1)
+      .setStrokeStyle(Math.max(3, 4 * this.escala), colorAnillo, 0.95)
+      .setFillStyle(colorAnillo, 0.18)
+      .setDepth(5);
+
+    const aura = this.add
+      .circle(0, 0, radio * 1.45, colorPrincipal, 0.25)
+      .setDepth(5)
+      .setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({
+      targets: aura,
+      scale: { from: 0.9, to: 1.1 },
+      alpha: { from: 0.16, to: 0.34 },
+      duration: 1200,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Cuerpo: imagen circular. La escala base lo deja del diametro deseado.
+    const escalaBase = (radio * 2) / LADO_TEXTURA_RETRATO;
+    const cuerpo = this.add
+      .image(0, 0, claveTextura)
+      .setScale(escalaBase)
+      .setDepth(6);
+    this.tweens.add({
+      targets: cuerpo,
+      scale: { from: escalaBase * 0.97, to: escalaBase * 1.04 },
+      duration: 900 + Math.random() * 300,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+
+    // Borde con el color principal del campeon (por fuera del retrato).
+    const borde = this.add
+      .circle(0, 0, radio + grosorBorde / 2)
+      .setStrokeStyle(grosorBorde, colorPrincipal)
+      .setDepth(6);
+
+    const escudo = this.add
+      .circle(0, 0, radio * 1.6, 0x8fd3ff, 0.25)
+      .setStrokeStyle(Math.max(2, 2.5 * this.escala), 0xbfeaff, 0.8)
+      .setDepth(7)
+      .setBlendMode(Phaser.BlendModes.ADD)
+      .setVisible(false);
+
+    // Barra de vida flotante sobre la ficha.
+    const anchoVida = radio * 2.6;
+    const altoVida = Math.max(6, 8 * this.escala);
+    const vidaMarco = this.add
+      .rectangle(0, 0, anchoVida + 4, altoVida + 4, COLOR_HUD_MARCO, 0.9)
+      .setDepth(8);
+    const vidaRelleno = this.add
+      .rectangle(0, 0, anchoVida, altoVida, COLOR_VIDA)
+      .setOrigin(0, 0.5)
+      .setDepth(9);
+
+    return {
+      sombra,
+      aura,
+      cuerpo,
+      escudo,
+      anillo,
+      borde,
+      vidaMarco,
+      vidaRelleno,
+      anchoVida,
+      radio,
+      colorPrincipal,
+      esRetrato: true,
+    };
   }
 
   // Construye el grupo de objetos de un campeon: sombra, aura, cuerpo y la
   // burbuja de escudo (oculta por defecto). Devuelve sus referencias para
   // poder reposicionarlos y animarlos cada frame.
-  crearSpriteCampeon(campeon) {
+  crearSpriteCampeon(campeon, lado) {
+    // Con retrato cargado: ficha circular con la imagen; si no, el dibujo actual.
+    const claveRetrato = this.texturaRetrato[lado];
+    if (claveRetrato && this.textures.exists(claveRetrato)) {
+      return this.crearSpriteRetrato(campeon, lado, claveRetrato);
+    }
+
     const radio = RADIO_CAMPEON * this.escala;
     const colorPrincipal = this.colorAEntero(campeon.colorPrincipal);
     const colorSecundario = this.colorAEntero(campeon.colorSecundario);
@@ -843,10 +1188,18 @@ export default class ArenaScene extends Phaser.Scene {
   // de offset guardado en el sprite).
   animarGolpe(sprite, posObjetivo) {
     // Parpadeo blanco: se tiñe el cuerpo de blanco y vuelve a su color.
-    sprite.cuerpo.setFillStyle(0xffffff);
+    if (sprite.esRetrato) {
+      sprite.cuerpo.setTintFill(0xffffff);
+    } else {
+      sprite.cuerpo.setFillStyle(0xffffff);
+    }
     this.time.delayedCall(90, () => {
       if (sprite.cuerpo && sprite.cuerpo.active) {
-        sprite.cuerpo.setFillStyle(sprite.colorPrincipal);
+        if (sprite.esRetrato) {
+          sprite.cuerpo.clearTint();
+        } else {
+          sprite.cuerpo.setFillStyle(sprite.colorPrincipal);
+        }
       }
     });
 
@@ -1529,6 +1882,26 @@ export default class ArenaScene extends Phaser.Scene {
     // Burbuja de escudo: visible solo mientras el escudo este activo.
     sprite.escudo.setPosition(x, y);
     sprite.escudo.setVisible(Boolean(campeon.escudoActivo));
+
+    if (sprite.esRetrato) {
+      // Anillo en el suelo, borde del retrato y barra de vida flotante.
+      sprite.anillo.setPosition(base.x, base.y + sprite.radio * 0.8);
+      sprite.borde.setPosition(x, y);
+
+      const yVida = y - sprite.radio - 14 * this.escala;
+      sprite.vidaMarco.setPosition(x, yVida);
+      sprite.vidaRelleno.setPosition(x - sprite.anchoVida / 2, yVida);
+
+      const porcentaje = Math.max(0, Math.min(1, campeon.hp / campeon.vidaMaxima));
+      sprite.vidaRelleno.width = sprite.anchoVida * porcentaje;
+      let color = COLOR_VIDA;
+      if (porcentaje < 0.3) {
+        color = COLOR_VIDA_BAJA;
+      } else if (porcentaje < 0.6) {
+        color = COLOR_VIDA_MEDIA;
+      }
+      sprite.vidaRelleno.setFillStyle(color);
+    }
   }
 
   // Actualiza el relleno de una barra del HUD segun el porcentaje de vida y

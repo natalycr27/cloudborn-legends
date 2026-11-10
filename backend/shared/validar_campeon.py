@@ -102,11 +102,36 @@ def _validar_y_ajustar_estadisticas(campeon_dict):
         estadisticas[clave] = _clamp(valor, minimo, maximo)
 
 
-def _validar_habilidades(campeon_dict):
-    """Valida que 'habilidades' tenga 2-3 entradas distintas del catalogo.
+def _habilidades_sugeridas(estadisticas):
+    """Devuelve el catalogo ordenado por coherencia con las estadisticas.
 
-    Rechaza un numero incorrecto de habilidades, los duplicados (Requirement 5.5)
-    y cualquier habilidad fuera del catalogo nombrandola en el error (Req 4.4).
+    Mas dano -> proyectil / embestida; mas vida o armadura -> escudo; menos
+    vida -> curacion. El resto del catalogo va al final en orden fijo.
+    """
+    vida = estadisticas.get("vida", 1000)
+    dano = estadisticas.get("dano", 100)
+    armadura = estadisticas.get("armadura", 30)
+
+    sugeridas = []
+    if dano >= 100:
+        sugeridas += ["proyectil", "embestida"]
+    if vida >= 1000 or armadura >= 30:
+        sugeridas.append("escudo")
+    if vida < 1000:
+        sugeridas.append("curacion")
+    sugeridas += ["proyectil", "escudo", "curacion", "embestida", "area_de_dano"]
+
+    # Quita repetidos conservando el orden.
+    return list(dict.fromkeys(sugeridas))
+
+
+def _validar_habilidades(campeon_dict):
+    """Repara y valida 'habilidades': 2-3 entradas distintas del catalogo.
+
+    Las habilidades fuera del catalogo se eliminan (no se rechaza el campeon) y,
+    si quedan menos de HABILIDADES_MIN, se completan con habilidades del
+    catalogo coherentes con las estadisticas. Siguen siendo errores: que no sea
+    una lista, tener duplicados o tener mas de HABILIDADES_MAX (Req 5.5).
     """
     habilidades = campeon_dict.get("habilidades")
     if not isinstance(habilidades, list):
@@ -114,11 +139,11 @@ def _validar_habilidades(campeon_dict):
             "El campeón no tiene una lista de habilidades válida."
         )
 
-    if not (HABILIDADES_MIN <= len(habilidades) <= HABILIDADES_MAX):
-        raise CampeonInvalidoError(
-            f"El campeón debe tener entre {HABILIDADES_MIN} y {HABILIDADES_MAX} "
-            "habilidades."
-        )
+    # Elimina lo que no pertenezca al catalogo (incluye valores no textuales).
+    habilidades = [
+        h for h in habilidades
+        if isinstance(h, str) and h in CATALOGO_HABILIDADES
+    ]
 
     # Las habilidades deben ser distintas entre si, sin duplicados (Req 5.5).
     if len(set(habilidades)) != len(habilidades):
@@ -126,13 +151,21 @@ def _validar_habilidades(campeon_dict):
             "El campeón tiene habilidades duplicadas; deben ser todas distintas."
         )
 
-    # Cada habilidad debe pertenecer al catalogo predefinido; se nombra la que falle.
-    for habilidad in habilidades:
-        if habilidad not in CATALOGO_HABILIDADES:
-            raise CampeonInvalidoError(
-                f"La habilidad '{habilidad}' no pertenece al catálogo predefinido."
-            )
+    if len(habilidades) > HABILIDADES_MAX:
+        raise CampeonInvalidoError(
+            f"El campeón debe tener entre {HABILIDADES_MIN} y {HABILIDADES_MAX} "
+            "habilidades."
+        )
 
+    # Completa con habilidades validas si quedaron menos de las necesarias.
+    if len(habilidades) < HABILIDADES_MIN:
+        for candidata in _habilidades_sugeridas(campeon_dict["estadisticas"]):
+            if len(habilidades) >= HABILIDADES_MIN:
+                break
+            if candidata not in habilidades:
+                habilidades.append(candidata)
+
+    campeon_dict["habilidades"] = habilidades
 
 def _validar_colores(campeon_dict):
     """Valida la presencia de colorPrincipal y colorSecundario como texto."""

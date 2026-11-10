@@ -143,58 +143,43 @@ def test_descripcion_limite_exacto_aceptada(longitud):
     mock_converse.assert_called_once()
 
 
-# --- Req 4.4: habilidad fuera del catalogo rechazada nombrandola -------------
+# --- Req 4.4 (revisado): habilidad fuera del catalogo se elimina y se repone --
 
 
-def test_habilidad_fuera_de_catalogo_rechazada_nombrando_la_habilidad():
-    """validar_y_ajustar rechaza una habilidad fuera del catalogo con un mensaje
-    en español que NOMBRA la habilidad invalida (Req 4.4)."""
-    habilidad_invalida = "teletransporte"
+def test_habilidad_fuera_de_catalogo_se_elimina_y_se_completa():
+    """Una habilidad inventada se elimina y se completa con una del catalogo."""
     campeon = {
         "nombre": "Ignis el Forjador",
-        "estadisticas": {
-            "vida": 1000,
-            "dano": 90,
-            "velocidad": 300,
-            "armadura": 25,
-        },
-        "habilidades": ["proyectil", habilidad_invalida],
+        "estadisticas": {"vida": 1000, "dano": 90, "velocidad": 300, "armadura": 25},
+        "habilidades": ["proyectil", "teletransporte"],
         "colorPrincipal": "#C0392B",
         "colorSecundario": "#F1C40F",
     }
-
-    with pytest.raises(CampeonInvalidoError) as exc_info:
-        validar_y_ajustar(campeon)
-
-    mensaje = str(exc_info.value)
-    # El mensaje nombra la habilidad invalida y esta en español ("catálogo").
-    assert habilidad_invalida in mensaje
-    assert "catálogo" in mensaje.lower()
+    resultado = validar_y_ajustar(campeon)
+    assert "teletransporte" not in resultado["habilidades"]
+    assert "proyectil" in resultado["habilidades"]
+    assert len(resultado["habilidades"]) == 2
 
 
-def test_habilidad_fuera_de_catalogo_no_almacena_campeon():
-    """Extremo a extremo: si Bedrock produce un campeon con una habilidad fuera
-    del catalogo, el handler responde HTTP 500 y NO persiste nada (Req 4.4)."""
-    campeon_invalido = json.dumps(
+def test_habilidad_fuera_de_catalogo_no_rechaza_el_campeon():
+    """Extremo a extremo: el campeon se crea (HTTP 200) sin la habilidad inventada."""
+    campeon_json = json.dumps(
         {
             "nombre": "Ignis el Forjador",
-            "estadisticas": {
-                "vida": 1000,
-                "dano": 90,
-                "velocidad": 300,
-                "armadura": 25,
-            },
+            "estadisticas": {"vida": 1000, "dano": 90, "velocidad": 300, "armadura": 25},
             "habilidades": ["proyectil", "teletransporte"],
             "colorPrincipal": "#C0392B",
             "colorSecundario": "#F1C40F",
         }
     )
+    resultado, _ = _invocar("Un guerrero de fuego con escudo", texto_bedrock=campeon_json)
 
-    descripcion = "Un guerrero de fuego con escudo"
-    assert len(descripcion.strip()) >= 10
-
-    resultado, _ = _invocar(descripcion, texto_bedrock=campeon_invalido)
-
-    assert resultado["statusCode"] == 500
+    assert resultado["statusCode"] == 200
     cuerpo = json.loads(resultado["body"])
-    assert "error" in cuerpo
+    assert "teletransporte" not in cuerpo["habilidades"]
+    assert len(cuerpo["habilidades"]) >= 2
+
+
+def test_json_invalido_sigue_rechazado():
+    resultado, _ = _invocar("Un guerrero de fuego con escudo", texto_bedrock="no es json")
+    assert resultado["statusCode"] == 500

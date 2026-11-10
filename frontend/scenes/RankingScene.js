@@ -21,6 +21,7 @@
 // muestra al entrar en la escena y se oculta al salir.
 
 import { API_URL } from "../src/main.js";
+import { urlImagenSegura, reintentarElementoImagen } from "../src/imagenes.js";
 
 export default class RankingScene extends Phaser.Scene {
   // Registra la escena con la clave "RankingScene" usada por main.js.
@@ -145,17 +146,43 @@ export default class RankingScene extends Phaser.Scene {
           `background:linear-gradient(135deg, ${principal} 0%, ${principal} 50%, ` +
           `${secundario} 50%, ${secundario} 100%)`;
 
+        // Miniatura del retrato si existe; si no, el circulo de colores.
+        const urlRetrato = urlImagenSegura(campeon && campeon.imagenUrl);
+        const marcador = urlRetrato
+          ? `<img class="entrada-retrato" src="${this.escapar(urlRetrato)}" ` +
+            `alt="Retrato de ${nombre}" loading="lazy" ` +
+            `data-colores="${this.escapar(estiloColores)}" />`
+          : `<span class="entrada-colores" role="img" ` +
+            `aria-label="Colores de ${nombre}" style="${estiloColores}"></span>`;
+
         return (
           `<li class="entrada-ranking">` +
           `<span class="entrada-puesto">${puesto}</span>` +
-          `<span class="entrada-colores" role="img" ` +
-          `aria-label="Colores de ${nombre}" style="${estiloColores}"></span>` +
+          marcador +
           `<span class="entrada-nombre">${nombre}</span>` +
           `<span class="entrada-victorias">${victorias} ${etiquetaVictorias}</span>` +
           `</li>`
         );
       })
       .join("");
+
+    // Si una miniatura no carga, vuelve al circulo de colores.
+    this.lista.querySelectorAll("img.entrada-retrato").forEach((img) => {
+      img.addEventListener(
+        "error",
+        async () => {
+          // Reintenta hasta 3 veces (2 s entre cada una) antes del respaldo.
+          if (await reintentarElementoImagen(img)) {
+            return;
+          }
+          const circulo = document.createElement("span");
+          circulo.className = "entrada-colores";
+          circulo.setAttribute("style", img.dataset.colores || "");
+          img.replaceWith(circulo);
+        },
+        { once: true }
+      );
+    });
   }
 
   // "Volver a jugar": oculta el overlay y regresa a la pantalla de invocacion.

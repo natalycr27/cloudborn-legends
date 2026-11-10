@@ -18,7 +18,7 @@
         padding: 0;
         width: 100%;
         height: 100%;
-        overflow-x: hidden;
+        overflow: hidden;
         background: #0b1020;
         color: #e8eefc;
         font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -28,18 +28,17 @@
          para los elementos HTML superpuestos (overlay). */
       #contenedor-juego {
         position: relative;
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        width: 100vw;
+        height: 100vh; /* fallback */
+        height: 100dvh;
+        overflow: hidden;
+        /* Sin flex: el escalado y centrado del canvas lo hace solo Phaser
+           (Scale.FIT + CENTER_BOTH). */
       }
 
-      /* El canvas que Phaser inyecta se escala de forma responsive. */
+      /* Phaser fija el tamano y los margenes del canvas; no se limita aqui. */
       #contenedor-juego canvas {
         display: block;
-        max-width: 100%;
-        max-height: 100%;
       }
 
       /* -----------------------------------------------------------------
@@ -589,6 +588,105 @@
         cursor: not-allowed;
       }
 
+      /* -----------------------------------------------------------------
+         Retratos generados con IA.
+         ----------------------------------------------------------------- */
+      /* Retrato en la tarjeta de invocacion: recuadro animado "Forjando su
+         apariencia…" que se sustituye por la imagen con fade + brillo. */
+      #tarjeta-retrato {
+        display: none;
+        position: relative;
+        width: min(100%, 280px);
+        aspect-ratio: 1 / 1;
+        align-self: center;
+        border-radius: 16px;
+        overflow: hidden;
+        border: 2px solid #3a4a7a;
+        background: #0b1020;
+      }
+      #tarjeta-retrato.visible {
+        display: block;
+      }
+      #tarjeta-retrato.revelado {
+        animation: retrato-halo 1.4s ease-out;
+      }
+      .retrato-forja {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        text-align: center;
+        font-size: 16px;
+        font-weight: 600;
+        color: #cfd8ff;
+        background: linear-gradient(110deg, #141a33 30%, #2f3b75 50%, #141a33 70%);
+        background-size: 200% 100%;
+        animation: retrato-forja 1.6s linear infinite;
+      }
+      .retrato-forja.oculto {
+        display: none;
+      }
+      .retrato-imagen {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+        opacity: 0;
+      }
+      .retrato-imagen.aparece {
+        animation: retrato-aparecer 1.2s ease-out forwards;
+      }
+      @keyframes retrato-forja {
+        from { background-position: 200% 0; }
+        to { background-position: -200% 0; }
+      }
+      @keyframes retrato-aparecer {
+        0% { opacity: 0; filter: brightness(2.6) saturate(1.5); transform: scale(1.06); }
+        60% { opacity: 1; filter: brightness(1.6) saturate(1.2); }
+        100% { opacity: 1; filter: brightness(1) saturate(1); transform: scale(1); }
+      }
+      @keyframes retrato-halo {
+        0% { box-shadow: 0 0 0 rgba(127, 147, 255, 0); }
+        40% { box-shadow: 0 0 32px rgba(127, 147, 255, 0.9); }
+        100% { box-shadow: 0 0 0 rgba(127, 147, 255, 0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .retrato-forja { animation: none; }
+      }
+
+      /* Miniatura de retrato en la seleccion (circulo) y el ranking. Si el
+         campeon no tiene retrato se muestra un marcador con sus colores. */
+      .seleccion-retrato {
+        flex: 0 0 auto;
+        width: 72px;
+        height: 72px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid #0b1020;
+        box-shadow: 0 0 0 1px #3a4a7a;
+        display: block;
+      }
+      .seleccion-titulo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+      }
+      .entrada-retrato {
+        flex: 0 0 auto;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid #0b1020;
+        box-shadow: 0 0 0 1px #3a4a7a;
+        display: block;
+      }
+
       /* En pantallas grandes (>= 768px) el overlay puede ensancharse un poco
          mas; la responsividad detallada vive en las escenas (tarea 8.5). */
       @media (min-width: 768px) {
@@ -639,6 +737,11 @@
              /campeones exitoso la rellene (nombre, estadisticas con barras,
              habilidades como etiquetas y circulo de colores). -->
         <div id="tarjeta-campeon" aria-live="polite">
+          <!-- Retrato generado con IA: recuadro animado mientras se genera. -->
+          <div id="tarjeta-retrato">
+            <div id="retrato-forja" class="retrato-forja">Forjando su apariencia…</div>
+            <img id="retrato-imagen" class="retrato-imagen" alt="Retrato del campeón" />
+          </div>
           <div class="tarjeta-cabecera">
             <h2 id="tarjeta-nombre"></h2>
             <div

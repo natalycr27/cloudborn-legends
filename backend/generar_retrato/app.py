@@ -16,6 +16,7 @@ import boto3
 from botocore.config import Config
 
 from shared.respuesta import respuesta
+from shared.reintentos import con_reintentos_throttling, ForjadorOcupadoError
 
 # Sufijo de estilo anexado al prompt visual del campeon.
 SUFIJO_PROMPT = (
@@ -119,6 +120,7 @@ def _generar_imagen(prompt):
 
 def lambda_handler(event, context):
     """Handler de POST /campeones/{id}/retrato."""
+    inicio = time.monotonic()
     try:
         campeon_id = ((event or {}).get("pathParameters") or {}).get("id", "")
         if not isinstance(campeon_id, str) or not _PATRON_ID.match(campeon_id):
@@ -142,7 +144,9 @@ def lambda_handler(event, context):
                 UpdateExpression="SET promptImagen = :p",
                 ExpressionAttributeValues={":p": base},
             )
-        imagen = _generar_imagen(base + SUFIJO_PROMPT)
+        imagen = con_reintentos_throttling(
+            lambda: _generar_imagen(base + SUFIJO_PROMPT), inicio=inicio
+        )
 
         # Nombre unico para que CloudFront no sirva una version vieja en cache.
         llave = f"generados/campeones/{campeon_id}-{int(time.time())}.jpg"
@@ -160,6 +164,10 @@ def lambda_handler(event, context):
             ExpressionAttributeValues={":u": url},
         )
         return respuesta(200, {"imagenUrl": url}, event)
+
+    except ForjadorOcupadoError as e:
+        print(f"WARN generar_retrato ocupado: {e}")
+        return respuesta(429, {"error": "El forjador está ocupado, reintentando..."}, event)
 
     except Exception as e:  # noqa: BLE001 - cualquier fallo se reporta como 500
         print(f"ERROR generar_retrato: {e}")

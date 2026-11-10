@@ -10,11 +10,13 @@ import json
 import uuid
 import base64
 import random
+import time
 
 import boto3
 from botocore.config import Config
 
 from shared.respuesta import respuesta
+from shared.reintentos import con_reintentos_throttling, ForjadorOcupadoError
 
 TEMAS = [
     "volcán con ríos de lava",
@@ -87,9 +89,13 @@ def _generar_imagen(prompt):
 
 def lambda_handler(event, context):
     """Handler de POST /arenas."""
+    inicio = time.monotonic()
     try:
         tema = random.choice(TEMAS)
-        imagen = _generar_imagen(PLANTILLA_PROMPT.format(tema=TEMAS_EN[tema]))
+        prompt = PLANTILLA_PROMPT.format(tema=TEMAS_EN[tema])
+        imagen = con_reintentos_throttling(
+            lambda: _generar_imagen(prompt), inicio=inicio
+        )
 
         llave = f"generados/arenas/{uuid.uuid4()}.jpg"
         _s3.put_object(
@@ -101,6 +107,10 @@ def lambda_handler(event, context):
 
         url = f"{os.environ['CLOUDFRONT_URL'].rstrip('/')}/{llave}"
         return respuesta(200, {"imagenUrl": url, "tema": tema}, event)
+
+    except ForjadorOcupadoError as e:
+        print(f"WARN generar_arena ocupado: {e}")
+        return respuesta(429, {"error": "El forjador está ocupado, reintentando..."}, event)
 
     except Exception as e:  # noqa: BLE001 - cualquier fallo se reporta como 500
         print(f"ERROR generar_arena: {e}")

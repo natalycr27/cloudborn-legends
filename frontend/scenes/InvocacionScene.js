@@ -23,6 +23,11 @@
 // oculta el overlay al transicionar.
 
 import { API_URL } from "../src/main.js";
+import {
+  pedirRetrato,
+  retratoReintentandose,
+  cargarImagenConReintentos,
+} from "../src/imagenes.js";
 
 // Limites de longitud de la descripcion (Requisito 2.1 / 2.5).
 const MIN_CARACTERES = 10;
@@ -57,6 +62,11 @@ export default class InvocacionScene extends Phaser.Scene {
     // Campeon mostrado actualmente en la tarjeta (para "Ir a la arena").
     this.campeonActual = null;
 
+    // Elementos del retrato generado con IA.
+    this.retratoContenedor = null;
+    this.retratoForja = null;
+    this.retratoImagen = null;
+
     // Manejadores guardados para poder desuscribirlos al apagar la escena.
     this.alEscribir = null;
     this.alInvocar = null;
@@ -90,6 +100,11 @@ export default class InvocacionScene extends Phaser.Scene {
     this.tarjetaHabilidades = document.getElementById("tarjeta-habilidades");
     this.botonCrearOtro = document.getElementById("boton-crear-otro");
     this.botonIrArena = document.getElementById("boton-ir-arena");
+
+    // Retrato generado con IA (recuadro "Forjando..." + imagen).
+    this.retratoContenedor = document.getElementById("tarjeta-retrato");
+    this.retratoForja = document.getElementById("retrato-forja");
+    this.retratoImagen = document.getElementById("retrato-imagen");
 
     // Si el overlay no existe (p. ej. en un entorno de prueba sin DOM), no
     // continua para evitar errores; el resto del juego sigue funcionando.
@@ -360,6 +375,9 @@ export default class InvocacionScene extends Phaser.Scene {
         : `<span class="habilidad-etiqueta">Sin habilidades</span>`;
     }
 
+    // Pide el retrato en segundo plano; la tarjeta ya se muestra de inmediato.
+    this.iniciarRetrato(campeon);
+
     // Oculta el formulario y muestra la tarjeta.
     if (this.formulario) {
       this.formulario.classList.add("oculto");
@@ -372,13 +390,105 @@ export default class InvocacionScene extends Phaser.Scene {
     }
   }
 
+  // Oculta el recuadro del retrato y deja la imagen lista para la proxima vez.
+  ocultarRetrato() {
+    if (this.retratoContenedor) {
+      this.retratoContenedor.classList.remove("visible", "revelado");
+    }
+    if (this.retratoImagen) {
+      this.retratoImagen.onload = null;
+      this.retratoImagen.onerror = null;
+      this.retratoImagen.classList.remove("aparece");
+      this.retratoImagen.removeAttribute("src");
+    }
+    if (this.retratoForja) {
+      this.retratoForja.classList.remove("oculto");
+    }
+  }
+
+  // Muestra el recuadro animado "Forjando su apariencia…" y lanza en segundo
+  // plano POST /campeones/{id}/retrato (maximo 27 s). Si falla o tarda de mas,
+  // oculta el recuadro sin mostrar error. Ignora respuestas de un campeon que
+  // ya no es el mostrado (p. ej. tras "Crear otro campeón").
+  iniciarRetrato(campeon) {
+    this.ocultarRetrato();
+    if (!this.retratoContenedor || !this.retratoImagen || !campeon) {
+      return;
+    }
+    if (campeon.id == null || campeon.id === "") {
+      return;
+    }
+    this.retratoContenedor.classList.add("visible");
+
+    // Si el servidor responde 429, pedirRetrato reintenta cada 20 s (hasta 3
+    // veces) en segundo plano y avisa por este callback; mientras tanto el
+    // recuadro "Forjando su apariencia…" se queda visible.
+    const alReintentoTerminado = (url) => {
+      if (this.campeonActual !== campeon) {
+        return;
+      }
+      if (!url) {
+        this.ocultarRetrato();
+        return;
+      }
+      campeon.imagenUrl = url;
+      this.revelarRetrato(url, campeon);
+    };
+
+    pedirRetrato(campeon.id, undefined, alReintentoTerminado).then((url) => {
+      if (this.campeonActual !== campeon) {
+        return;
+      }
+      if (!url) {
+        if (!retratoReintentandose(campeon.id)) {
+          this.ocultarRetrato();
+        }
+        return;
+      }
+      campeon.imagenUrl = url;
+      this.revelarRetrato(url, campeon);
+    });
+  }
+
+  // Precarga la imagen y, al estar lista, la muestra con fade + brillo.
+  revelarRetrato(url, campeon) {
+    const img = this.retratoImagen;
+    img.onload = () => {
+      if (this.campeonActual !== campeon) {
+        return;
+      }
+      if (this.retratoForja) {
+        this.retratoForja.classList.add("oculto");
+      }
+      img.classList.add("aparece");
+      this.retratoContenedor.classList.add("revelado");
+    };
+    img.onerror = () => {
+      if (this.campeonActual === campeon) {
+        this.ocultarRetrato();
+      }
+    };
+    // Precarga con hasta 3 reintentos (2 s entre cada uno) antes de rendirse.
+    cargarImagenConReintentos(url).then((cargo) => {
+      if (this.campeonActual !== campeon) {
+        return;
+      }
+      if (!cargo) {
+        this.ocultarRetrato();
+        return;
+      }
+      img.src = url;
+    });
+  }
+
   // Deja el formulario de invocacion en su estado inicial: vacia el textarea,
   // pone el contador en "0 / 500", borra cualquier mensaje de error o de carga,
   // habilita el boton "Invocar" y oculta la tarjeta del campeon anterior.
   // Se usa tanto al entrar a la escena (create) como en "Crear otro campeón".
   reiniciarFormulario() {
-    // Olvida el campeon mostrado en la tarjeta anterior.
+    // Olvida el campeon mostrado en la tarjeta anterior (y su retrato).
     this.campeonActual = null;
+    this.ocultarRetrato();
 
     // Permite enviar de nuevo (por si se salio con una invocacion en curso).
     this.generando = false;

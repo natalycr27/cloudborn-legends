@@ -25,6 +25,13 @@
 // campeon recien invocado.
 
 import { API_URL } from "../src/main.js";
+import {
+  pedirArena,
+  pedirRetrato,
+  urlImagenSegura,
+  reintentarElementoImagen,
+  REGISTRY_ARENA,
+} from "../src/imagenes.js";
 
 // Rangos fijos de cada estadistica (coinciden con el backend) usados para
 // normalizar el valor a un porcentaje de barra. vida 800-1200, dano 50-150,
@@ -114,6 +121,38 @@ export default class SeleccionScene extends Phaser.Scene {
     this.actualizarBoton();
     this.actualizarPista();
     this.cargarCampeones();
+
+    // Genera la arena en segundo plano; no bloquea la seleccion.
+    this.generarArenaEnSegundoPlano();
+  }
+
+  // Llama a POST /arenas sin esperar y guarda el resultado (o el error) en el
+  // registry de Phaser para que ArenaScene lo use. Mientras tanto el estado es
+  // "pendiente". Un token evita que una respuesta vieja pise a una mas nueva.
+  generarArenaEnSegundoPlano() {
+    const registry = this.registry;
+    const token = {};
+    SeleccionScene.tokenArena = token;
+    registry.set(REGISTRY_ARENA, { estado: "pendiente" });
+
+    pedirArena()
+      .then((arena) => {
+        if (SeleccionScene.tokenArena === token) {
+          registry.set(REGISTRY_ARENA, {
+            estado: "lista",
+            imagenUrl: arena.imagenUrl,
+            tema: arena.tema,
+          });
+        }
+      })
+      .catch((error) => {
+        if (SeleccionScene.tokenArena === token) {
+          registry.set(REGISTRY_ARENA, {
+            estado: "error",
+            error: error && error.message ? error.message : "error",
+          });
+        }
+      });
   }
 
   // Llama a GET /campeones y, segun el resultado, muestra la lista, el estado
@@ -191,6 +230,25 @@ export default class SeleccionScene extends Phaser.Scene {
     this.lista.innerHTML = this.campeones
       .map((campeon) => this.plantillaTarjeta(campeon))
       .join("");
+
+    // Si un retrato no carga, lo reemplaza por el marcador con los colores.
+    this.lista.querySelectorAll("img.seleccion-retrato").forEach((img) => {
+      img.addEventListener(
+        "error",
+        async () => {
+          // Reintenta hasta 3 veces (2 s entre cada una) antes del respaldo.
+          if (await reintentarElementoImagen(img)) {
+            return;
+          }
+          const marcador = document.createElement("span");
+          marcador.className = "seleccion-retrato";
+          marcador.setAttribute("aria-hidden", "true");
+          marcador.setAttribute("style", img.dataset.colores || "");
+          img.replaceWith(marcador);
+        },
+        { once: true }
+      );
+    });
   }
 
   // Construye el HTML de la tarjeta de un campeon: cabecera (nombre + circulo de
@@ -206,6 +264,15 @@ export default class SeleccionScene extends Phaser.Scene {
     const estiloColores =
       `background:linear-gradient(135deg, ${principal} 0%, ${principal} 50%, ` +
       `${secundario} 50%, ${secundario} 100%)`;
+
+    // Retrato circular si el campeon tiene imagenUrl; si no, un marcador con
+    // sus colores.
+    const urlRetrato = urlImagenSegura(campeon && campeon.imagenUrl);
+    const retratoHtml = urlRetrato
+      ? `<img class="seleccion-retrato" src="${this.escapar(urlRetrato)}" ` +
+        `alt="Retrato de ${nombre}" loading="lazy" ` +
+        `data-colores="${this.escapar(estiloColores)}" />`
+      : `<span class="seleccion-retrato" aria-hidden="true" style="${estiloColores}"></span>`;
 
     // Estadisticas con barras, cada una escalada a su rango.
     const estadisticasHtml = RANGOS_ESTADISTICAS.map((rango) => {
@@ -249,7 +316,8 @@ export default class SeleccionScene extends Phaser.Scene {
       `<li class="tarjeta-seleccion" data-id="${this.escapar(id)}" ` +
       `role="button" aria-pressed="false" tabindex="0">` +
       `<div class="seleccion-cabecera">` +
-      `<h2 class="seleccion-nombre">${nombre}</h2>` +
+      `<div class="seleccion-titulo">${retratoHtml}` +
+      `<h2 class="seleccion-nombre">${nombre}</h2></div>` +
       `<span class="seleccion-colores" role="img" ` +
       `aria-label="Colores de ${nombre}" style="${estiloColores}"></span>` +
       `</div>` +
@@ -347,6 +415,14 @@ export default class SeleccionScene extends Phaser.Scene {
       );
       return;
     }
+
+    // Los campeones sin retrato lo piden en segundo plano (sin esperar) para
+    // que la proxima vez ya lo tengan.
+    [campeonA, campeonB].forEach((campeon) => {
+      if (!urlImagenSegura(campeon.imagenUrl) && campeon.id != null) {
+        pedirRetrato(campeon.id);
+      }
+    });
 
     // Oculta el overlay e inicia la arena con los dos campeones elegidos.
     if (this.overlay) {

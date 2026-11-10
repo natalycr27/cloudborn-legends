@@ -211,18 +211,10 @@ def _campeon_estadisticas_invalidas(draw):
 def _campeon_habilidades_invalidas(draw):
     """Campeon con numero incorrecto de habilidades, lista no-lista o fuera de catalogo."""
     campeon = draw(_campeon_base_valido())
-    modo = draw(st.sampled_from(["pocas", "muchas", "no_lista", "fuera_de_catalogo"]))
-    if modo == "pocas":
-        # Menos de HABILIDADES_MIN (0 o 1 habilidad).
-        campeon["habilidades"] = draw(
-            st.lists(
-                st.sampled_from(_CATALOGO),
-                min_size=0,
-                max_size=HABILIDADES_MIN - 1,
-                unique=True,
-            )
-        )
-    elif modo == "muchas":
+    # "pocas" y "fuera_de_catalogo" ya no se rechazan: se reparan (ver
+    # test_reparar_habilidades_property / test_crear_campeon_unit).
+    modo = draw(st.sampled_from(["muchas", "no_lista"]))
+    if modo == "muchas":
         # Mas de HABILIDADES_MAX habilidades distintas del catalogo.
         campeon["habilidades"] = draw(
             st.lists(
@@ -232,22 +224,10 @@ def _campeon_habilidades_invalidas(draw):
                 unique=True,
             )
         )
-    elif modo == "no_lista":
+    else:  # no_lista
         campeon["habilidades"] = draw(
             st.one_of(st.none(), st.text(max_size=5), st.integers())
         )
-    else:  # fuera_de_catalogo: una habilidad desconocida se marca para verificar el nombre.
-        desconocida = draw(
-            st.text(alphabet="abcdefghijklmnop_", min_size=1, max_size=15).filter(
-                lambda h: h not in CATALOGO_HABILIDADES and h != ""
-            )
-        )
-        valida = draw(st.sampled_from(_CATALOGO))
-        habilidades = [valida, desconocida]
-        # Se baraja para no asumir posicion de la invalida.
-        indices = draw(st.permutations([0, 1]))
-        campeon["habilidades"] = [habilidades[i] for i in indices]
-        campeon["_habilidad_desconocida"] = desconocida
     return campeon
 
 
